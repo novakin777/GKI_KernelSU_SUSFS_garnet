@@ -30,3 +30,4 @@ index 9594cfd1cf2c..7fbfef34fca1 100644
 +	} else /* Don't allow unchecked modules */
  		handle_cfi_failure(ptr);
  }
+ 
