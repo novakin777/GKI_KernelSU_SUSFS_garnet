@@ -2,7 +2,7 @@ diff --git a/kernel/module.c b/kernel/module.c
 index 0750270d1f68..ca1fc1515f62 100644
 --- a/kernel/module.c
 +++ b/kernel/module.c
-@@ -1348,7 +1348,7 @@ bad_version:
+@@ -1348,6 +1348,6 @@ bad_version:
  	pr_warn("%s: disagrees about version of symbol %s\n",
  	       info->name, symname);
 -	return 0;
