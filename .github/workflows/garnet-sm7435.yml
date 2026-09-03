@@ -55,6 +55,17 @@ jobs:
           remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* mysql* dotnet-sdk-*"
           remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/gradle"
 
+      - name: Add swap for ThinLTO
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo fallocate -l 12G /mnt/kernel-build.swap
+          sudo chmod 0600 /mnt/kernel-build.swap
+          sudo mkswap /mnt/kernel-build.swap
+          sudo swapon /mnt/kernel-build.swap
+          free -h
+          swapon --show
+
       - name: Install build dependencies
         shell: bash
         run: |
@@ -180,7 +191,7 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             TARGET_PRODUCT=garnet \
-            -j"$(nproc)" Image modules
+            -j2 Image modules
 
           release="$(make -s -C kernel/common O="$GITHUB_WORKSPACE/out" \
             ARCH=arm64 LLVM=1 LLVM_IAS=1 kernelrelease)"
@@ -237,7 +248,7 @@ jobs:
             echo "Building external module: $module"
             make -C "$module_root/$module" \
               M="$module_relative_root/$module" \
-              "${common_args[@]}" -j"$(nproc)"
+              "${common_args[@]}" -j2
             make -C "$module_root/$module" \
               M="$module_relative_root/$module" \
               "${common_args[@]}" \
