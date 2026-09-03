@@ -94,8 +94,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git -C kernel/common apply --check +            "$GITHUB_WORKSPACE/.github/patches/garnet-cfi-module-compat.patch"
-          git -C kernel/common apply +            "$GITHUB_WORKSPACE/.github/patches/garnet-cfi-module-compat.patch"
+          git -C kernel/common apply --check "$GITHUB_WORKSPACE/.github/patches/garnet-cfi-module-compat.patch"
+          git -C kernel/common apply "$GITHUB_WORKSPACE/.github/patches/garnet-cfi-module-compat.patch"
           grep -Fq "config CFI_FORCE_SKIP_CHECK" kernel/common/arch/Kconfig
 
       - name: Checkout Qualcomm SM7435 external modules
