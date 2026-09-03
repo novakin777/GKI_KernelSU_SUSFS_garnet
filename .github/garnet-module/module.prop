@@ -1,0 +1,6 @@
+id=garnet_ar9271
+name=Garnet AR9271 (ath9k_htc)
+version=5.10.260-lineage-23.2
+versionCode=510260
+author=novakin777
+description=Loads the SM7435-matched mac80211 and ath9k_htc modules and supplies AR9271 firmware.
