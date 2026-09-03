@@ -4,6 +4,13 @@ permissions:
   contents: read
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/garnet-sm7435.yml"
+      - ".github/config/garnet-nethunter.config"
+      - ".github/garnet-module/**"
   workflow_dispatch:
     inputs:
       enable_kernelsu:
