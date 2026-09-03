@@ -11,6 +11,7 @@ on:
       - ".github/workflows/garnet-sm7435.yml"
       - ".github/config/garnet-nethunter.config"
       - ".github/garnet-module/**"
+      - ".github/patches/garnet-cfi-module-compat.patch"
   workflow_dispatch:
     inputs:
       enable_kernelsu:
@@ -88,6 +89,14 @@ jobs:
           git -C kernel/common checkout --detach "$KERNEL_COMMIT"
           test "$(git -C kernel/common rev-parse HEAD)" = "$KERNEL_COMMIT"
           test "$(sed -n 's/^SUBLEVEL = //p' kernel/common/Makefile)" = "260"
+
+      - name: Apply Garnet CFI module compatibility patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C kernel/common apply --check +            "$GITHUB_WORKSPACE/.github/patches/garnet-cfi-module-compat.patch"
+          git -C kernel/common apply +            "$GITHUB_WORKSPACE/.github/patches/garnet-cfi-module-compat.patch"
+          grep -Fq "config CFI_FORCE_SKIP_CHECK" kernel/common/arch/Kconfig
 
       - name: Checkout Qualcomm SM7435 external modules
         shell: bash
@@ -181,6 +190,7 @@ jobs:
             CONFIG_ATH9K_HW=m
             CONFIG_ATH9K_COMMON=m
             CONFIG_ATH9K_HTC=m
+            CONFIG_CFI_FORCE_SKIP_CHECK=y
           )
           for symbol in "${required[@]}"; do
             grep -Fqx "$symbol" "$config" || {
