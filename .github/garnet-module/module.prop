@@ -3,4 +3,4 @@ name=Garnet AR9271 (ath9k_htc)
 version=5.10.260-lineage-23.2
 versionCode=510260
 author=novakin777
-description=Loads the SM7435-matched mac80211 and ath9k_htc modules and supplies AR9271 firmware.
+description=Safe manual loader for SM7435-matched mac80211/ath9k_htc modules and AR9271 firmware; autoload is disabled by default.

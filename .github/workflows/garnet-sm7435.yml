@@ -280,7 +280,8 @@ jobs:
           mkdir -p artifacts module-package/modules module-package/firmware/ath9k_htc
           cp .github/garnet-module/module.prop module-package/module.prop
           cp .github/garnet-module/service.sh module-package/service.sh
-          chmod 0755 module-package/service.sh
+          cp .github/garnet-module/load.sh module-package/load.sh
+          chmod 0755 module-package/service.sh module-package/load.sh
 
           for module in mac80211.ko ath.ko ath9k_hw.ko ath9k_common.ko ath9k_htc.ko; do
             path="$(find out -type f -name "$module" -print -quit)"
