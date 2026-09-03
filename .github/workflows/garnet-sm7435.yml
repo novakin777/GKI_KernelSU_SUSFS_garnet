@@ -32,6 +32,7 @@ env:
   CLANG_REPOSITORY: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
   CLANG_COMMIT: d0e0a3882edb1acc193263ae98fce706e82aca38
   CLANG_DIRECTORY: clang-r574158
+  KERNEL_LOCALVERSION: -gki-g7ee66f07cebf
   EXPECTED_RELEASE: 5.10.260-gki-g7ee66f07cebf
 
 jobs:
@@ -148,6 +149,7 @@ jobs:
 
           make -C kernel/common O="$out" \
             ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            LOCALVERSION="$KERNEL_LOCALVERSION" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             olddefconfig
@@ -188,13 +190,15 @@ jobs:
 
           make -C kernel/common O="$GITHUB_WORKSPACE/out" \
             ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            LOCALVERSION="$KERNEL_LOCALVERSION" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             TARGET_PRODUCT=garnet \
             -j2 Image modules
 
           release="$(make -s -C kernel/common O="$GITHUB_WORKSPACE/out" \
-            ARCH=arm64 LLVM=1 LLVM_IAS=1 kernelrelease)"
+            ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            LOCALVERSION="$KERNEL_LOCALVERSION" kernelrelease)"
           echo "Kernel release: $release"
           test "$release" = "$EXPECTED_RELEASE"
 
@@ -239,6 +243,7 @@ jobs:
             ARCH=arm64
             LLVM=1
             LLVM_IAS=1
+            LOCALVERSION="$KERNEL_LOCALVERSION"
             CROSS_COMPILE=aarch64-linux-gnu-
             CROSS_COMPILE_ARM32=arm-linux-gnueabi-
             TARGET_PRODUCT=garnet
