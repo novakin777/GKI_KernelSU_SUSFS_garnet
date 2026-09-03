@@ -30,8 +30,10 @@ env:
   KSU_COMMIT: 5e6f1453338783f77c3f40e780b2b227342ed78b
   DROIDSPACES_COMMIT: 9c6a1c056e6cdb096c8cfd037e3221fcdf39bf7d
   CLANG_REPOSITORY: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
-  CLANG_COMMIT: d0e0a3882edb1acc193263ae98fce706e82aca38
-  CLANG_DIRECTORY: clang-r574158
+  # Match the compiler used by PixelOS vendor_dlkm modules exactly. CFI/BTI
+  # compatibility is not guaranteed between different Clang 21 revisions.
+  CLANG_COMMIT: f8439f0628d799092dd07df440a6334cab28939c
+  CLANG_DIRECTORY: clang-r563880c
   KERNEL_LOCALVERSION: -gki-g7ee66f07cebf
   EXPECTED_RELEASE: 5.10.260-gki-g7ee66f07cebf
 
@@ -110,7 +112,15 @@ jobs:
           git -C toolchain sparse-checkout set "$CLANG_DIRECTORY"
           git -C toolchain fetch --depth=1 origin "$CLANG_COMMIT"
           git -C toolchain checkout --detach FETCH_HEAD
-          "toolchain/$CLANG_DIRECTORY/bin/clang" --version
+          clang_version="$("toolchain/$CLANG_DIRECTORY/bin/clang" --version | head -n1)"
+          echo "$clang_version"
+          case "$clang_version" in
+            *"Android (14054515"*"based on r563880c"*"clang version 21.0.0"*) ;;
+            *)
+              echo "Unexpected Clang build; refusing a CFI-incompatible kernel build" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Integrate KernelSU-Next
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.enable_kernelsu }}
