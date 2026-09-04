@@ -1,0 +1,152 @@
+name: Garnet AR9271 modules only
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ar9271-modules.yml"
+      - ".github/config/garnet-nethunter.config"
+      - ".github/config/garnet-pixelos-stock.config.gz"
+      - ".github/actions/droidspaces/**"
+      - ".github/garnet-module/**"
+  workflow_dispatch:
+    inputs:
+      matched_run_id:
+        description: "Successful matched-stack run containing Module.symvers"
+        required: true
+        default: "33889638126"
+        type: string
+
+env:
+  KERNEL_REPOSITORY: https://github.com/LineageOS/android_kernel_xiaomi_sm7435.git
+  KERNEL_COMMIT: 7ee66f07cebf9fdf16929e766f428435d5b951a7
+  CLANG_REPOSITORY: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+  CLANG_COMMIT: f8439f0628d799092dd07df440a6334cab28939c
+  CLANG_DIRECTORY: clang-r563880c
+  KERNEL_LOCALVERSION: -gki-g7ee66f
+  EXPECTED_RELEASE: 5.10.260-gki-g7ee66f07cebf
+
+jobs:
+  build-ar9271:
+    name: AR9271 modules only
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout current commit
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bc bison build-essential curl flex git kmod libelf-dev libssl-dev pahole python3 rsync unzip xz-utils zip zstd jq
+
+      - name: Checkout matching kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p kernel
+          git clone --no-checkout "$KERNEL_REPOSITORY" kernel/common
+          git -C kernel/common fetch --depth=1 origin "$KERNEL_COMMIT"
+          git -C kernel/common checkout --detach "$KERNEL_COMMIT"
+          test "$(git -C kernel/common rev-parse HEAD)" = "$KERNEL_COMMIT"
+
+      - name: Checkout matching Clang 21
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p toolchain
+          git -C toolchain init
+          git -C toolchain remote add origin "$CLANG_REPOSITORY"
+          git -C toolchain config extensions.partialClone origin
+          git -C toolchain config remote.origin.promisor true
+          git -C toolchain config remote.origin.partialclonefilter blob:none
+          git -C toolchain sparse-checkout init --cone
+          git -C toolchain sparse-checkout set "$CLANG_DIRECTORY"
+          git -C toolchain fetch --depth=1 origin "$CLANG_COMMIT"
+          git -C toolchain checkout --detach FETCH_HEAD
+
+      - name: Apply DroidSpaces and reproduce config
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/toolchain/$CLANG_DIRECTORY/bin:$PATH"
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/toolchain/$CLANG_DIRECTORY/lib64:${LD_LIBRARY_PATH:-}"
+          out="$GITHUB_WORKSPACE/kernel/out/common"
+          mkdir -p "$out"
+          gzip -dc .github/config/garnet-pixelos-stock.config.gz > "$out/.config"
+          echo "7acaf288b34d94fc16ba640c1ecef316ee8f98b1808476ab0b78a0f6ae7c6bfb  $out/.config" | sha256sum --check --strict
+          KCONFIG_CONFIG="$out/.config" kernel/common/scripts/kconfig/merge_config.sh -m -r -O "$out" "$out/.config" .github/config/garnet-nethunter.config
+          make -C kernel/common O="$out" ARCH=arm64 LLVM=1 LLVM_IAS=1 LOCALVERSION="$KERNEL_LOCALVERSION" olddefconfig
+          test "$(make -s -C kernel/common O="$out" ARCH=arm64 LLVM=1 LLVM_IAS=1 LOCALVERSION="$KERNEL_LOCALVERSION" kernelrelease)" = "$EXPECTED_RELEASE"
+
+      - name: Apply DroidSpaces patches
+        uses: ./.github/actions/droidspaces
+        with:
+          version: android12-5.10
+          android_version: android12
+          kernel_version: "5.10"
+          os_patch_level: lineage-23.2
+          sublevel: "260"
+          droidspaces_commit: 9c6a1c056e6cdb096c8cfd037e3221fcdf39bf7d
+
+      - name: Download Module.symvers from successful matched build
+        shell: bash
+        env:
+          MATCHED_RUN_ID: ${{ inputs.matched_run_id || '33889638126' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${MATCHED_RUN_ID}/artifacts?name=garnet-sm7435-matched-stack"
+          artifact_url="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api" | jq -r '.artifacts[0].archive_download_url')"
+          test -n "$artifact_url" -a "$artifact_url" != "null"
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$artifact_url" -o matched.zip
+          unzip -q matched.zip -d matched-zip
+          tar --use-compress-program=unzstd -xf matched-zip/*.tar.zst -C matched-zip
+          cp matched-zip/matched-stack/Module.symvers kernel/out/common/Module.symvers
+          test -s kernel/out/common/Module.symvers
+
+      - name: Build only mac80211 and ath9k_htc chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/toolchain/$CLANG_DIRECTORY/bin:$PATH"
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/toolchain/$CLANG_DIRECTORY/lib64:${LD_LIBRARY_PATH:-}"
+          out="$GITHUB_WORKSPACE/kernel/out/common"
+          args=(O="$out" ARCH=arm64 LLVM=1 LLVM_IAS=1 LOCALVERSION="$KERNEL_LOCALVERSION")
+          make -C kernel/common "${args[@]}" M=net/mac80211 modules
+          make -C kernel/common "${args[@]}" M=drivers/net/wireless/ath modules
+          mkdir -p ar9271-ksu/modules ar9271-ksu/firmware
+          for m in mac80211.ko ath.ko ath9k_hw.ko ath9k_common.ko ath9k_htc.ko; do
+            p="$(find "$out" -type f -name "$m" -print -quit)"
+            test -n "$p"
+            cp "$p" "ar9271-ksu/modules/$m"
+            test "$(modinfo -F vermagic "ar9271-ksu/modules/$m")" = "$EXPECTED_RELEASE SMP preempt mod_unload modversions aarch64"
+          done
+          curl -fL "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/ath9k_htc/htc_9271-1.4.0.fw" -o ar9271-ksu/firmware/htc_9271-1.4.0.fw
+          cp ar9271-ksu/firmware/htc_9271-1.4.0.fw ar9271-ksu/firmware/htc_9271.fw
+
+      - name: Assemble KernelSU module
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .github/garnet-module/module.prop ar9271-ksu/module.prop
+          cp .github/garnet-module/load.sh ar9271-ksu/load.sh
+          cp .github/garnet-module/service.sh ar9271-ksu/service.sh
+          chmod 0755 ar9271-ksu/load.sh ar9271-ksu/service.sh
+          sha256sum ar9271-ksu/modules/*.ko ar9271-ksu/firmware/htc_9271-1.4.0.fw > ar9271-ksu/SHA256SUMS.txt
+          zip -qr9 ar9271-garnet-kernelsu-ar9271.zip ar9271-ksu
+
+      - name: Upload AR9271 KernelSU module
+        uses: actions/upload-artifact@v7
+        with:
+          name: ar9271-garnet-kernelsu-module
+          path: ar9271-garnet-kernelsu-ar9271.zip
+          if-no-files-found: error
+          compression-level: 0
