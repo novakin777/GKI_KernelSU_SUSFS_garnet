@@ -27,7 +27,7 @@ env:
   CLANG_REPOSITORY: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
   CLANG_COMMIT: f8439f0628d799092dd07df440a6334cab28939c
   CLANG_DIRECTORY: clang-r563880c
-  KERNEL_LOCALVERSION: -gki-g7ee66f
+  KERNEL_LOCALVERSION: -gki-g7ee66f07cebf
   EXPECTED_RELEASE: 5.10.260-gki-g7ee66f07cebf
 
 jobs:
