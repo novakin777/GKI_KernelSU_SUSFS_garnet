@@ -1,23 +1,19 @@
-name: Garnet SM7435 NetHunter
+name: Garnet SM7435 matched kernel stack
 
 permissions:
   contents: read
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - ".github/workflows/garnet-sm7435.yml"
       - ".github/config/garnet-nethunter.config"
+      - ".github/config/garnet-pixelos-stock.config"
+      - ".github/config/garnet-stock-*.modules"
       - ".github/garnet-module/**"
-      - ".github/patches/garnet-module-version-bypass.patch"
   workflow_dispatch:
     inputs:
-      enable_kernelsu:
-        description: "Integrate KernelSU-Next (dev)"
-        type: boolean
-        default: true
       enable_droidspaces:
         description: "Apply DroidSpaces 5.10 kABI patches"
         type: boolean
@@ -26,11 +22,10 @@ on:
 env:
   KERNEL_REPOSITORY: https://github.com/LineageOS/android_kernel_xiaomi_sm7435.git
   KERNEL_COMMIT: 7ee66f07cebf9fdf16929e766f428435d5b951a7
-  KSU_COMMIT: 5e6f1453338783f77c3f40e780b2b227342ed78b
+  MODULES_REPOSITORY: https://github.com/LineageOS/android_kernel_xiaomi_sm7435-modules.git
+  MODULES_COMMIT: 0247408280f62b7feb62c30cbdc76a5e62eebd84
   DROIDSPACES_COMMIT: 9c6a1c056e6cdb096c8cfd037e3221fcdf39bf7d
   CLANG_REPOSITORY: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
-  # Match the compiler used by PixelOS vendor_dlkm modules exactly. CFI/BTI
-  # compatibility is not guaranteed between different Clang 21 revisions.
   CLANG_COMMIT: f8439f0628d799092dd07df440a6334cab28939c
   CLANG_DIRECTORY: clang-r563880c
   KERNEL_LOCALVERSION: -gki-g7ee66f07cebf
@@ -38,12 +33,12 @@ env:
 
 jobs:
   build:
-    name: 5.10.260-android12 garnet
+    name: Image and all matched PixelOS modules
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
-      - name: Checkout build repository
+      - name: Checkout packaging repository
         uses: actions/checkout@v7
 
       - name: Free disk space
@@ -57,7 +52,7 @@ jobs:
           remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* mysql* dotnet-sdk-*"
           remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/gradle"
 
-      - name: Add swap for ThinLTO
+      - name: Add swap for full LTO
         shell: bash
         run: |
           set -euo pipefail
@@ -65,8 +60,6 @@ jobs:
           sudo chmod 0600 /mnt/kernel-build.swap
           sudo mkswap /mnt/kernel-build.swap
           sudo swapon /mnt/kernel-build.swap
-          free -h
-          swapon --show
 
       - name: Install build dependencies
         shell: bash
@@ -77,27 +70,23 @@ jobs:
             bc bison build-essential ccache curl flex git kmod libelf-dev \
             libssl-dev pahole python3 rsync unzip xz-utils zip zstd
 
-      - name: Checkout LineageOS SM7435 kernel
+      - name: Checkout matching kernel and external modules
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p kernel
+
           git clone --no-checkout "$KERNEL_REPOSITORY" kernel/common
           git -C kernel/common fetch --depth=1 origin "$KERNEL_COMMIT"
           git -C kernel/common checkout --detach "$KERNEL_COMMIT"
           test "$(git -C kernel/common rev-parse HEAD)" = "$KERNEL_COMMIT"
-          test "$(sed -n 's/^SUBLEVEL = //p' kernel/common/Makefile)" = "260"
 
-      - name: Allow PixelOS vendor modules with different symbol CRCs
-        shell: bash
-        run: |
-          set -euo pipefail
-          patch="$GITHUB_WORKSPACE/.github/patches/garnet-module-version-bypass.patch"
-          git -C kernel/common apply --check "$patch"
-          git -C kernel/common apply "$patch"
-          grep -A 3 -F "bad_version:" kernel/common/kernel/module.c | grep -Fq "return 1;"
+          git clone --no-checkout "$MODULES_REPOSITORY" kernel/sm7435-modules
+          git -C kernel/sm7435-modules fetch --depth=1 origin "$MODULES_COMMIT"
+          git -C kernel/sm7435-modules checkout --detach "$MODULES_COMMIT"
+          test "$(git -C kernel/sm7435-modules rev-parse HEAD)" = "$MODULES_COMMIT"
 
-      - name: Checkout AOSP Clang 21
+      - name: Checkout matching AOSP Clang 21
         shell: bash
         run: |
           set -euo pipefail
@@ -111,22 +100,13 @@ jobs:
           git -C toolchain sparse-checkout set "$CLANG_DIRECTORY"
           git -C toolchain fetch --depth=1 origin "$CLANG_COMMIT"
           git -C toolchain checkout --detach FETCH_HEAD
+
           clang_version="$("toolchain/$CLANG_DIRECTORY/bin/clang" --version | head -n1)"
           echo "$clang_version"
           case "$clang_version" in
             *"Android (14054515"*"based on r563880c"*"clang version 21.0.0"*) ;;
-            *)
-              echo "Unexpected Clang build; refusing a CFI-incompatible kernel build" >&2
-              exit 1
-              ;;
+            *) echo "Unexpected Clang build" >&2; exit 1 ;;
           esac
-
-      - name: Integrate KernelSU-Next
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.enable_kernelsu }}
-        uses: ./.github/actions/root-setup
-        with:
-          flavor: next
-          commit: ${{ env.KSU_COMMIT }}
 
       - name: Apply DroidSpaces patches
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.enable_droidspaces }}
@@ -139,21 +119,19 @@ jobs:
           sublevel: "260"
           droidspaces_commit: ${{ env.DROIDSPACES_COMMIT }}
 
-      - name: Merge garnet configuration
+      - name: Reproduce PixelOS configuration and add NetHunter support
         shell: bash
         run: |
           set -euo pipefail
           export PATH="$GITHUB_WORKSPACE/toolchain/$CLANG_DIRECTORY/bin:$PATH"
           export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/toolchain/$CLANG_DIRECTORY/lib64:${LD_LIBRARY_PATH:-}"
-          out="$GITHUB_WORKSPACE/out"
+          out="$GITHUB_WORKSPACE/kernel/out/common"
           mkdir -p "$out"
+          cp .github/config/garnet-pixelos-stock.config "$out/.config"
 
           KCONFIG_CONFIG="$out/.config" \
             kernel/common/scripts/kconfig/merge_config.sh -m -r -O "$out" \
-              kernel/common/arch/arm64/configs/gki_defconfig \
-              kernel/common/arch/arm64/configs/vendor/parrot_GKI.config \
-              kernel/common/arch/arm64/configs/vendor/garnet_GKI.config \
-              kernel/common/arch/arm64/configs/vendor/debugfs.config \
+              .github/config/garnet-pixelos-stock.config \
               .github/config/garnet-nethunter.config
 
           make -C kernel/common O="$out" \
@@ -163,23 +141,17 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             olddefconfig
 
-      - name: Verify effective configuration
+      - name: Verify configuration and safe module checks
         shell: bash
         run: |
           set -euo pipefail
-          config=out/.config
+          config=kernel/out/common/.config
           required=(
-            CONFIG_SYSVIPC=y
-            CONFIG_PID_NS=y
-            CONFIG_IPC_NS=y
-            CONFIG_USER_NS=y
-            CONFIG_DEVTMPFS=y
-            CONFIG_CFG80211=m
-            CONFIG_MAC80211=m
-            CONFIG_ATH_COMMON=m
-            CONFIG_ATH9K_HW=m
-            CONFIG_ATH9K_COMMON=m
-            CONFIG_ATH9K_HTC=m
+            CONFIG_SYSVIPC=y CONFIG_PID_NS=y CONFIG_IPC_NS=y CONFIG_USER_NS=y
+            CONFIG_DEVTMPFS=y CONFIG_CFG80211=m CONFIG_MAC80211=m
+            CONFIG_ATH_COMMON=m CONFIG_ATH9K_HW=m CONFIG_ATH9K_COMMON=m
+            CONFIG_ATH9K_HTC=m CONFIG_MODVERSIONS=y CONFIG_CFI_CLANG=y
+            CONFIG_LTO_CLANG_FULL=y
           )
           for symbol in "${required[@]}"; do
             grep -Fqx "$symbol" "$config" || {
@@ -188,7 +160,11 @@ jobs:
             }
           done
 
-      - name: Build Image, in-tree modules and AR9271 modules
+          # Never publish another global module-version bypass build.
+          sed -n '/bad_version:/,+3p' kernel/common/kernel/module.c
+          sed -n '/bad_version:/,+3p' kernel/common/kernel/module.c | grep -Fq 'return 0;'
+
+      - name: Build Image and in-tree modules
         shell: bash
         run: |
           set -euo pipefail
@@ -196,68 +172,129 @@ jobs:
           export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/toolchain/$CLANG_DIRECTORY/lib64:${LD_LIBRARY_PATH:-}"
           export KBUILD_BUILD_USER=PixelOS-CI
           export KBUILD_BUILD_HOST=PixelOS-CI
+          out="$GITHUB_WORKSPACE/kernel/out/common"
 
-          make -C kernel/common O="$GITHUB_WORKSPACE/out" \
+          make -C kernel/common O="$out" \
             ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             LOCALVERSION="$KERNEL_LOCALVERSION" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            TARGET_PRODUCT=garnet \
+            TARGET_PRODUCT=garnet BOARD_PLATFORM=parrot \
             -j2 Image modules
 
-          release="$(make -s -C kernel/common O="$GITHUB_WORKSPACE/out" \
+          release="$(make -s -C kernel/common O="$out" \
             ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             LOCALVERSION="$KERNEL_LOCALVERSION" kernelrelease)"
           echo "Kernel release: $release"
           test "$release" = "$EXPECTED_RELEASE"
 
-      - name: Package AnyKernel3 and AR9271 module
+          make -C kernel/common O="$out" \
+            ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            LOCALVERSION="$KERNEL_LOCALVERSION" \
+            INSTALL_MOD_PATH="$GITHUB_WORKSPACE/module-stage" \
+            INSTALL_MOD_STRIP=1 modules_install
+
+      - name: Build and install every SM7435 external module tree
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth=1 --branch gki-2.0 \
-            https://github.com/WildKernels/AnyKernel3.git AnyKernel3
-          cp out/arch/arm64/boot/Image AnyKernel3/Image
+          export PATH="$GITHUB_WORKSPACE/toolchain/$CLANG_DIRECTORY/bin:$PATH"
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/toolchain/$CLANG_DIRECTORY/lib64:${LD_LIBRARY_PATH:-}"
+          export KBUILD_BUILD_USER=PixelOS-CI
+          export KBUILD_BUILD_HOST=PixelOS-CI
+          kernel_src="$GITHUB_WORKSPACE/kernel/common"
+          ext_root="$GITHUB_WORKSPACE/kernel/sm7435-modules"
+          out="$GITHUB_WORKSPACE/kernel/out/common"
+          relative_root=../sm7435-modules
+          external_modules=(
+            qcom/opensource/mmrm-driver
+            qcom/opensource/audio-kernel
+            qcom/opensource/camera-kernel
+            qcom/opensource/cvp-kernel
+            qcom/opensource/dataipa/drivers/platform/msm
+            qcom/opensource/datarmnet/core
+            qcom/opensource/datarmnet-ext/aps
+            qcom/opensource/datarmnet-ext/offload
+            qcom/opensource/datarmnet-ext/shs
+            qcom/opensource/datarmnet-ext/perf
+            qcom/opensource/datarmnet-ext/perf_tether
+            qcom/opensource/datarmnet-ext/sch
+            qcom/opensource/datarmnet-ext/wlan
+            qcom/opensource/display-drivers/msm
+            qcom/opensource/eva-kernel
+            qcom/opensource/video-driver
+            qcom/opensource/wlan/qcacld-3.0/.adrastea
+          )
 
-          mkdir -p artifacts module-package/modules module-package/firmware/ath9k_htc
-          cp .github/garnet-module/module.prop module-package/module.prop
-          cp .github/garnet-module/service.sh module-package/service.sh
-          cp .github/garnet-module/load.sh module-package/load.sh
-          chmod 0755 module-package/service.sh module-package/load.sh
-
-          for module in mac80211.ko ath.ko ath9k_hw.ko ath9k_common.ko ath9k_htc.ko; do
-            path="$(find out -type f -name "$module" -print -quit)"
-            if [ -z "$path" ]; then
-              echo "Built module not found: $module" >&2
-              exit 1
-            fi
-            cp "$path" "module-package/modules/$module"
-            echo "$module: $(modinfo -F vermagic "$path")"
+          for module in "${external_modules[@]}"; do
+            echo "::group::Build $module"
+            flags=(
+              "M=$relative_root/$module"
+              "KERNEL_SRC=$kernel_src" "OUT_DIR=$out" "O=$out"
+              ARCH=arm64 LLVM=1 LLVM_IAS=1
+              "LOCALVERSION=$KERNEL_LOCALVERSION"
+              CROSS_COMPILE=aarch64-linux-gnu-
+              CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+              TARGET_PRODUCT=garnet BOARD_PLATFORM=parrot
+            )
+            make -C "$ext_root/$module" "${flags[@]}" -j2
+            make -C "$ext_root/$module" "${flags[@]}" \
+              "INSTALL_MOD_PATH=$GITHUB_WORKSPACE/module-stage" \
+              INSTALL_MOD_STRIP=1 "KERNEL_UAPI_HEADERS_DIR=$out" modules_install
+            echo "::endgroup::"
           done
 
-          curl --fail --location --retry 5 \
-            https://gitlab.com/kernel-firmware/linux-firmware/-/raw/main/ath9k_htc/htc_9271-1.4.0.fw \
-            --output module-package/firmware/ath9k_htc/htc_9271-1.4.0.fw
-          cp module-package/firmware/ath9k_htc/htc_9271-1.4.0.fw \
-            module-package/firmware/htc_9271.fw
+      - name: Validate exact PixelOS module coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          module_dir="$GITHUB_WORKSPACE/module-stage/lib/modules/$EXPECTED_RELEASE"
+          test -d "$module_dir"
 
-          printf '%s\n' \
-            mac80211.ko \
-            ath.ko \
-            ath9k_hw.ko \
-            ath9k_common.ko \
-            ath9k_htc.ko > module-package/modules.load
+          find "$module_dir" -type f -name '*.ko' -printf '%f\n' | sort -u > built.modules
+          sort -u .github/config/garnet-stock-vendor-boot.modules > expected-vendor-boot.modules
+          sort -u .github/config/garnet-stock-vendor-dlkm.modules > expected-vendor-dlkm.modules
 
-          git -C AnyKernel3 rev-parse HEAD > artifacts/anykernel3.commit
-          git -C kernel/common rev-parse HEAD > artifacts/kernel.commit
+          missing=0
+          for manifest in expected-vendor-boot.modules expected-vendor-dlkm.modules; do
+            comm -23 "$manifest" built.modules > "missing-$manifest"
+            if test -s "missing-$manifest"; then
+              echo "Missing modules from $manifest:" >&2
+              cat "missing-$manifest" >&2
+              missing=1
+            fi
+          done
+          test "$missing" -eq 0
 
-          (cd AnyKernel3 && zip -q -r ../artifacts/garnet-5.10.260-nethunter-AnyKernel3.zip . -x '.git/*')
-          (cd module-package && zip -q -r ../artifacts/garnet-ar9271-kernelsu-module.zip .)
+          while IFS= read -r module; do
+            path="$(find "$module_dir" -type f -name "$module" -print -quit)"
+            test -n "$path"
+            test "$(modinfo -F vermagic "$path")" = \
+              "$EXPECTED_RELEASE SMP preempt mod_unload modversions aarch64"
+          done < expected-vendor-dlkm.modules
 
-      - name: Upload build artifacts
+          depmod -b "$GITHUB_WORKSPACE/module-stage" "$EXPECTED_RELEASE"
+
+      - name: Package raw matched stack for image assembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/matched-stack
+          cp kernel/out/common/arch/arm64/boot/Image artifacts/matched-stack/Image
+          cp kernel/out/common/.config artifacts/matched-stack/kernel.config
+          cp kernel/out/common/Module.symvers artifacts/matched-stack/Module.symvers
+          cp built.modules artifacts/matched-stack/built.modules
+          cp expected-vendor-boot.modules artifacts/matched-stack/vendor-boot.modules
+          cp expected-vendor-dlkm.modules artifacts/matched-stack/vendor-dlkm.modules
+          cp -a "module-stage/lib/modules/$EXPECTED_RELEASE" artifacts/matched-stack/modules
+          git -C kernel/common rev-parse HEAD > artifacts/matched-stack/kernel.commit
+          git -C kernel/sm7435-modules rev-parse HEAD > artifacts/matched-stack/modules.commit
+          tar -C artifacts -I 'zstd -19 -T0' -cf artifacts/garnet-matched-stack.tar.zst matched-stack
+
+      - name: Upload matched stack
         uses: actions/upload-artifact@v7
         with:
-          name: garnet-sm7435-5.10.260
-          path: artifacts/
+          name: garnet-sm7435-matched-stack
+          path: artifacts/garnet-matched-stack.tar.zst
           if-no-files-found: error
           compression-level: 0
