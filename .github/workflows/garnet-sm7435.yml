@@ -9,7 +9,7 @@ on:
     paths:
       - ".github/workflows/garnet-sm7435.yml"
       - ".github/config/garnet-nethunter.config"
-      - ".github/config/garnet-pixelos-stock.config"
+      - ".github/config/garnet-pixelos-stock.config.gz"
       - ".github/config/garnet-stock-*.modules"
       - ".github/garnet-module/**"
   workflow_dispatch:
@@ -127,11 +127,13 @@ jobs:
           export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/toolchain/$CLANG_DIRECTORY/lib64:${LD_LIBRARY_PATH:-}"
           out="$GITHUB_WORKSPACE/kernel/out/common"
           mkdir -p "$out"
-          cp .github/config/garnet-pixelos-stock.config "$out/.config"
+          gzip -dc .github/config/garnet-pixelos-stock.config.gz > "$out/.config"
+          echo "7acaf288b34d94fc16ba640c1ecef316ee8f98b1808476ab0b78a0f6ae7c6bfb  $out/.config" \
+            | sha256sum --check --strict
 
           KCONFIG_CONFIG="$out/.config" \
             kernel/common/scripts/kconfig/merge_config.sh -m -r -O "$out" \
-              .github/config/garnet-pixelos-stock.config \
+              "$out/.config" \
               .github/config/garnet-nethunter.config
 
           make -C kernel/common O="$out" \
