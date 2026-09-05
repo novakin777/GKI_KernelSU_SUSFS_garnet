@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# V2: enable the monitor netdev TX queue after the monitor vdev is ready.
+# V3: enable the monitor netdev TX queue after the monitor vdev is ready.
 from pathlib import Path
 import sys
 
@@ -54,7 +54,7 @@ replace_once(
     "\t\t/* The stock monitor netdev is RX-only and remains stopped. */\n"
     "\t\thdd_debug(\"Enabling monitor carrier and Tx queues\");\n"
     "\t\twlan_hdd_netif_queue_control(\n"
-    "\t\t\tadapter, WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,\n"
+    "\t\t\tadapter, WLAN_START_ALL_NETIF_QUEUE,\n"
     "\t\t\tWLAN_CONTROL_PATH);\n"
     "\n"
     "\t\tparam.policy = BBM_DRIVER_MODE_POLICY;\n",
@@ -156,4 +156,4 @@ drop:
 '''
 replace_once(txrx, marker, function + marker)
 
-print("qcacld monitor raw-injection V2 patch applied successfully")
+print("qcacld monitor raw-injection V3 patch applied successfully")
