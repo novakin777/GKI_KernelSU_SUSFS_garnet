@@ -1,0 +1,129 @@
+diff --git a/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_tx_rx.h b/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_tx_rx.h
+index 0000000..0000000 100644
+--- a/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_tx_rx.h
++++ b/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_tx_rx.h
+@@ -65,6 +65,11 @@ struct hdd_context;
+ 
+ netdev_tx_t hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev);
+ 
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++netdev_tx_t hdd_mon_hard_start_xmit(struct sk_buff *skb,
++				    struct net_device *dev);
++#endif
++
+ /**
+  * hdd_tx_timeout() - Wrapper function to protect __hdd_tx_timeout from SSR
+  * @net_dev: pointer to net_device structure
+ diff --git a/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index 0000000..0000000 100644
+--- a/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -1,3 +1,3 @@
+@@
+ #ifdef FEATURE_MONITOR_MODE_SUPPORT
+-/* Monitor mode net_device_ops, doesnot Tx and most of operations. */
++/* Monitor mode net_device_ops with raw 802.11 TX support. */
+ static const struct net_device_ops wlan_mon_drv_ops = {
+ 	.ndo_open = hdd_mon_open,
+ 	.ndo_stop = hdd_stop,
++	.ndo_start_xmit = hdd_mon_hard_start_xmit,
+ 	.ndo_get_stats = hdd_get_stats,
+ };
+ diff --git a/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c b/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
+index 0000000..0000000 100644
+--- a/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
++++ b/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
+@@ -47,11 +47,73 @@
+ #include "wlan_hdd_nud_tracking.h"
+ #include "dp_txrx.h"
++#include <net/ieee80211_radiotap.h>
++#include "ol_txrx.h"
+ #if defined(WLAN_SUPPORT_RX_FISA)
+ #include "dp_fisa_rx.h"
+-#else
+-#include <net/ieee80211_radiotap.h>
+ #endif
+ #include <ol_defines.h>
+ #include "cfg_ucfg_api.h"
+ #include "target_type.h"
+ #include "wlan_hdd_object_manager.h"
+ #include "nan_public_structs.h"
+ #include "nan_ucfg_api.h"
+ #include <wlan_hdd_sar_limits.h>
+ #include "wlan_hdd_object_manager.h"
+ #include "wlan_hdd_mlo.h"
++
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++/**
++ * hdd_mon_hard_start_xmit() - transmit a raw 802.11 frame from monitor mode
++ * @skb: radiotap + IEEE 802.11 frame supplied by userspace
++ * @dev: monitor net_device
++ *
++ * Version 1 intentionally uses only the radiotap length.  Rate/channel and
++ * other radiotap TX controls are left to the existing monitor configuration.
++ * The remaining IEEE 802.11 frame is handed to the existing qcacld raw TX
++ * datapath on the monitor vdev.
++ *
++ * Return: NETDEV_TX_OK.  The skb is consumed on every path.
++ */
++netdev_tx_t hdd_mon_hard_start_xmit(struct sk_buff *skb,
++				    struct net_device *dev)
++{
++	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
++	struct ieee80211_radiotap_header *rtap;
++	ol_txrx_soc_handle soc;
++	qdf_nbuf_t rejected;
++	uint16_t rt_len;
++	uint8_t vdev_id;
++	enum ol_tx_spec tx_spec;
++
++	if (unlikely(!skb || !adapter))
++		goto drop;
++
++	if (unlikely(skb->len < sizeof(*rtap)))
++		goto drop;
++
++	rtap = (struct ieee80211_radiotap_header *)skb->data;
++	if (unlikely(rtap->it_version != 0))
++		goto drop;
++
++	rt_len = ieee80211_get_radiotap_len(skb->data);
++	if (unlikely(rt_len < sizeof(*rtap) || skb->len <= rt_len))
++		goto drop;
++
++	skb_pull(skb, rt_len);
++	skb_reset_mac_header(skb);
++	skb->next = NULL;
++
++	soc = cds_get_context(QDF_MODULE_ID_SOC);
++	if (unlikely(!soc))
++		goto drop;
++
++	/* hdd_enable_monitor_mode() uses pdev id 0 for this Adrastea target. */
++	vdev_id = ol_txrx_get_mon_vdev_from_pdev(soc, 0);
++	if (unlikely(vdev_id == 0xea))
++		goto drop;
++
++	tx_spec = OL_TX_SPEC_RAW | OL_TX_SPEC_NO_AGGR | OL_TX_SPEC_NO_ENCRYPT;
++	rejected = cdp_tx_non_std(soc, vdev_id, tx_spec, skb);
++
++	while (rejected) {
++		struct sk_buff *next = rejected->next;
++
++		rejected->next = NULL;
++		dev_kfree_skb_any(rejected);
++		rejected = next;
++	}
++
++	return NETDEV_TX_OK;
++
++drop:
++	if (skb)
++		dev_kfree_skb_any(skb);
++
++	return NETDEV_TX_OK;
++}
++#endif /* FEATURE_MONITOR_MODE_SUPPORT */
+ 
+ #ifdef TX_MULTIQ_PER_AC
+ #if defined(QCA_LL_TX_FLOW_CONTROL_V2) || defined(QCA_LL_PDEV_TX_FLOW_CONTROL)
