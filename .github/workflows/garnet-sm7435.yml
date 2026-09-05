@@ -274,27 +274,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # .adrastea is a symlink to the qcacld root. Plain find does not
-          # descend through it, so use the deterministic build output path.
-          unstripped="kernel/sm7435-modules/qcom/opensource/wlan/qcacld-3.0/.adrastea/qca_cld3_adrastea.ko"
-          test -f "$unstripped"
-          echo "Unstripped module: $unstripped"
 
-          # Full LTO may inline/internalize this entirely module-local TX path.
-          # In particular, cdp_tx_non_std() is an inline CDP wrapper, so requiring
-          # these source identifiers in the final ELF symbol table is invalid.
-          test -s "$unstripped"
-          readelf -h "$unstripped" | grep -F 'AArch64'
-          modinfo "$unstripped" | grep -F "vermagic:       $EXPECTED_RELEASE SMP preempt mod_unload modversions aarch64"
+          # modules_install already proved where Kbuild placed the finished
+          # module. Validate that deterministic staged copy instead of guessing
+          # the location of Kbuild's O= output for the .adrastea symlink tree.
+          module="$(find "module-stage/lib/modules/$EXPECTED_RELEASE" \
+            -type f -name 'qca_cld3_adrastea.ko' -print -quit)"
+          test -n "$module"
+          test -s "$module"
+          echo "Staged module: $module"
 
-          echo "LTO symbol diagnostics (absence is expected and is not a failure):"
-          readelf -Ws "$unstripped" \
+          readelf -h "$module" | grep -F 'AArch64'
+          modinfo "$module" \
+            | grep -F "vermagic:       $EXPECTED_RELEASE SMP preempt mod_unload modversions aarch64"
+
+          # Full LTO and INSTALL_MOD_STRIP may inline, internalize, or remove
+          # local names. Source-level grep in the patch step is authoritative.
+          echo "ELF symbol diagnostics (absence is expected and is not a failure):"
+          readelf -Ws "$module" \
             | grep -E 'hdd_mon_hard_start_xmit|ol_txrx_get_mon_vdev_from_pdev|cdp_tx_non_std' \
             || true
-
-          installed="$(find "module-stage/lib/modules/$EXPECTED_RELEASE" -type f -name 'qca_cld3_adrastea.ko' -print -quit)"
-          test -n "$installed"
-          echo "Installed module: $installed"
 
       - name: Package injection test artifacts
         shell: bash
