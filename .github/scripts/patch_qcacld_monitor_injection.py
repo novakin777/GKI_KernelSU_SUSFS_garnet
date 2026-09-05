@@ -52,7 +52,7 @@ replace_once(
     "\t\tparam.policy = BBM_DRIVER_MODE_POLICY;\n",
     "\tif (!ret) {\n"
     "\t\t/* The stock monitor netdev is RX-only and remains stopped. */\n"
-    "\t\thdd_debug(\"Enabling monitor carrier and Tx queues\");\n"
+    "\t\thdd_debug(\"Enabling monitor Tx queues without carrier\");\n"
     "\t\twlan_hdd_netif_queue_control(\n"
     "\t\t\tadapter, WLAN_START_ALL_NETIF_QUEUE,\n"
     "\t\t\tWLAN_CONTROL_PATH);\n"
