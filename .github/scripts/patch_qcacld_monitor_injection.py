@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Rebuild marker: validate the current monitor-injection branch after patch cleanup.
 from pathlib import Path
 import sys
 
