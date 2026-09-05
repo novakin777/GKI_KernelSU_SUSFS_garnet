@@ -1,11 +1,11 @@
-name: Garnet SM7435 monitor injection V1
+name: Garnet SM7435 monitor injection V2
 
 permissions:
   contents: read
 
 on:
   push:
-    branches: [garnet-monitor-injection-v1]
+    branches: [garnet-monitor-injection-v2]
     paths:
       - ".github/workflows/garnet-sm7435.yml"
       - ".github/scripts/patch_qcacld_monitor_injection.py"
@@ -36,7 +36,7 @@ env:
 
 jobs:
   build:
-    name: Matched stack + qcacld raw monitor TX
+    name: Matched stack + qcacld raw monitor TX + queue
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -97,6 +97,8 @@ jobs:
 
           hdd=kernel/sm7435-modules/qcom/opensource/wlan/qcacld-3.0/core/hdd
           grep -n "ndo_start_xmit = hdd_mon_hard_start_xmit" "$hdd/src/wlan_hdd_main.c"
+          grep -n "Enabling monitor carrier and Tx queues" "$hdd/src/wlan_hdd_main.c"
+          grep -n "WLAN_START_ALL_NETIF_QUEUE_N_CARRIER" "$hdd/src/wlan_hdd_main.c"
           grep -n "hdd_mon_hard_start_xmit" "$hdd/src/wlan_hdd_tx_rx.c" "$hdd/inc/wlan_hdd_tx_rx.h"
           grep -n "OL_TX_SPEC_RAW.*OL_TX_SPEC_NO_AGGR.*OL_TX_SPEC_NO_ENCRYPT" "$hdd/src/wlan_hdd_tx_rx.c"
           git -C kernel/sm7435-modules diff --check
@@ -299,31 +301,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/monitor-injection-v1/modules
-          cp kernel/out/common/arch/arm64/boot/Image artifacts/monitor-injection-v1/Image
-          cp kernel/out/common/.config artifacts/monitor-injection-v1/kernel.config
-          cp kernel/out/common/Module.symvers artifacts/monitor-injection-v1/Module.symvers
+          mkdir -p artifacts/monitor-injection-v2/modules
+          cp kernel/out/common/arch/arm64/boot/Image artifacts/monitor-injection-v2/Image
+          cp kernel/out/common/.config artifacts/monitor-injection-v2/kernel.config
+          cp kernel/out/common/Module.symvers artifacts/monitor-injection-v2/Module.symvers
 
           qca="$(find "module-stage/lib/modules/$EXPECTED_RELEASE" -type f -name 'qca_cld3_adrastea.ko' -print -quit)"
-          cp "$qca" artifacts/monitor-injection-v1/modules/qca_cld3_adrastea.ko
-          cp .github/scripts/patch_qcacld_monitor_injection.py artifacts/monitor-injection-v1/
+          cp "$qca" artifacts/monitor-injection-v2/modules/qca_cld3_adrastea.ko
+          cp .github/scripts/patch_qcacld_monitor_injection.py artifacts/monitor-injection-v2/
 
-          git -C kernel/common rev-parse HEAD > artifacts/monitor-injection-v1/kernel.commit
-          git -C kernel/sm7435-modules rev-parse HEAD > artifacts/monitor-injection-v1/modules.commit
-          git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/monitor-injection-v1/kernelsu-next.commit
-          printf '%s\n' "$KERNELSU_VERSION" > artifacts/monitor-injection-v1/kernelsu-next.version
-          printf '%s\n' 'monitor ndo_start_xmit -> strip radiotap -> monitor vdev -> cdp_tx_non_std RAW|NO_AGGR|NO_ENCRYPT' \
-            > artifacts/monitor-injection-v1/README.txt
+          git -C kernel/common rev-parse HEAD > artifacts/monitor-injection-v2/kernel.commit
+          git -C kernel/sm7435-modules rev-parse HEAD > artifacts/monitor-injection-v2/modules.commit
+          git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/monitor-injection-v2/kernelsu-next.commit
+          printf '%s\n' "$KERNELSU_VERSION" > artifacts/monitor-injection-v2/kernelsu-next.version
+          printf '%s\n' \
+            'monitor open -> START_ALL_NETIF_QUEUE_N_CARRIER -> ndo_start_xmit -> strip radiotap -> monitor vdev -> cdp_tx_non_std RAW|NO_AGGR|NO_ENCRYPT' \
+            > artifacts/monitor-injection-v2/README.txt
 
           sha256sum \
-            artifacts/monitor-injection-v1/Image \
-            artifacts/monitor-injection-v1/modules/qca_cld3_adrastea.ko \
-            > artifacts/monitor-injection-v1/SHA256SUMS
+            artifacts/monitor-injection-v2/Image \
+            artifacts/monitor-injection-v2/modules/qca_cld3_adrastea.ko \
+            > artifacts/monitor-injection-v2/SHA256SUMS
 
-      - name: Upload monitor injection V1
+      - name: Upload monitor injection V2
         uses: actions/upload-artifact@v6
         with:
-          name: garnet-monitor-injection-v1-${{ github.run_number }}
-          path: artifacts/monitor-injection-v1
+          name: garnet-monitor-injection-v2-${{ github.run_number }}
+          path: artifacts/monitor-injection-v2
           if-no-files-found: error
           compression-level: 9
