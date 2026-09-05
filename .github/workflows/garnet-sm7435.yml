@@ -274,8 +274,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          unstripped="$(find kernel/sm7435-modules -type f -name 'qca_cld3_adrastea.ko' -print -quit)"
-          test -n "$unstripped"
+          # .adrastea is a symlink to the qcacld root. Plain find does not
+          # descend through it, so use the deterministic build output path.
+          unstripped="kernel/sm7435-modules/qcom/opensource/wlan/qcacld-3.0/.adrastea/qca_cld3_adrastea.ko"
+          test -f "$unstripped"
           echo "Unstripped module: $unstripped"
 
           # Full LTO may inline/internalize this entirely module-local TX path.
