@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Rebuild marker: validate the current monitor-injection branch after patch cleanup.
+# V2: enable the monitor netdev TX queue after the monitor vdev is ready.
 from pathlib import Path
 import sys
 
@@ -46,6 +46,20 @@ replace_once(
     "};",
 )
 
+replace_once(
+    main,
+    "\tif (!ret) {\n"
+    "\t\tparam.policy = BBM_DRIVER_MODE_POLICY;\n",
+    "\tif (!ret) {\n"
+    "\t\t/* The stock monitor netdev is RX-only and remains stopped. */\n"
+    "\t\thdd_debug(\"Enabling monitor carrier and Tx queues\");\n"
+    "\t\twlan_hdd_netif_queue_control(\n"
+    "\t\t\tadapter, WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,\n"
+    "\t\t\tWLAN_CONTROL_PATH);\n"
+    "\n"
+    "\t\tparam.policy = BBM_DRIVER_MODE_POLICY;\n",
+)
+
 txrx = HDD / "src/wlan_hdd_tx_rx.c"
 replace_once(
     txrx,
@@ -74,7 +88,7 @@ function = r'''
  * @skb: radiotap + IEEE 802.11 frame supplied by userspace
  * @dev: monitor net_device
  *
- * V1 consumes only the radiotap length. Rate/channel and other radiotap TX
+ * This implementation consumes only the radiotap length. Rate/channel and other TX
  * controls remain governed by the existing monitor configuration. The raw
  * IEEE 802.11 frame is submitted to the existing qcacld non-standard TX path
  * on the monitor vdev.
@@ -142,4 +156,4 @@ drop:
 '''
 replace_once(txrx, marker, function + marker)
 
-print("qcacld monitor raw-injection V1 patch applied successfully")
+print("qcacld monitor raw-injection V2 patch applied successfully")
