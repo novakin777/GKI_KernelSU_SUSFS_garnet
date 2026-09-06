@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# V3: enable the monitor netdev TX queue after the monitor vdev is ready.
+# V4: keep monitor TX queues stopped at boot; expose an explicit runtime switch.
 from pathlib import Path
 import sys
 
@@ -46,18 +46,69 @@ replace_once(
     "};",
 )
 
+module = HDD / "src/wlan_hdd_main_module.c"
 replace_once(
-    main,
-    "\tif (!ret) {\n"
-    "\t\tparam.policy = BBM_DRIVER_MODE_POLICY;\n",
-    "\tif (!ret) {\n"
-    "\t\t/* The stock monitor netdev is RX-only and remains stopped. */\n"
-    "\t\thdd_debug(\"Enabling monitor Tx queues without carrier\");\n"
-    "\t\twlan_hdd_netif_queue_control(\n"
-    "\t\t\tadapter, WLAN_START_ALL_NETIF_QUEUE,\n"
-    "\t\t\tWLAN_CONTROL_PATH);\n"
-    "\n"
-    "\t\tparam.policy = BBM_DRIVER_MODE_POLICY;\n",
+    module,
+    "#include \"wlan_hdd_main.h\"\n",
+    "#include \"wlan_hdd_main.h\"\n"
+    "#include \"wlan_hdd_tx_rx.h\"\n",
+)
+
+replace_once(
+    module,
+    "static int __init hdd_module_init(void)\n",
+    r'''#ifdef FEATURE_MONITOR_MODE_SUPPORT
+static bool monitor_tx_enable;
+
+static int monitor_tx_enable_set(const char *val,
+                                 const struct kernel_param *kp)
+{
+    struct hdd_context *hdd_ctx;
+    struct hdd_adapter *adapter;
+    bool enable;
+    int ret;
+
+    ret = kstrtobool(val, &enable);
+    if (ret)
+        return ret;
+
+    hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+    if (wlan_hdd_validate_context(hdd_ctx))
+        return -ENODEV;
+
+    adapter = hdd_get_adapter(hdd_ctx, QDF_MONITOR_MODE);
+    if (!adapter || !adapter->dev)
+        return -ENODEV;
+
+    if (enable) {
+        hdd_info("Manually enabling monitor Tx queues without carrier");
+        wlan_hdd_netif_queue_control(
+            adapter, WLAN_START_ALL_NETIF_QUEUE,
+            WLAN_CONTROL_PATH);
+    } else {
+        hdd_info("Manually disabling monitor Tx queues");
+        wlan_hdd_netif_queue_control(
+            adapter, WLAN_STOP_ALL_NETIF_QUEUE,
+            WLAN_CONTROL_PATH);
+    }
+
+    WRITE_ONCE(monitor_tx_enable, enable);
+    return 0;
+}
+
+static const struct kernel_param_ops monitor_tx_enable_ops = {
+    .set = monitor_tx_enable_set,
+    .get = param_get_bool,
+};
+
+module_param_cb(monitor_tx_enable, &monitor_tx_enable_ops,
+                &monitor_tx_enable, 0644);
+MODULE_PARM_DESC(monitor_tx_enable,
+                 "Manually enable raw monitor TX queues after Android boot");
+#endif
+
+static int __init hdd_module_init(void)
+''',
 )
 
 txrx = HDD / "src/wlan_hdd_tx_rx.c"
@@ -156,4 +207,4 @@ drop:
 '''
 replace_once(txrx, marker, function + marker)
 
-print("qcacld monitor raw-injection V3 patch applied successfully")
+print("qcacld monitor raw-injection V4 manual-arm patch applied successfully")
