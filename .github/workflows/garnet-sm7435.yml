@@ -1,11 +1,11 @@
-name: Garnet SM7435 monitor injection V4
+name: Garnet SM7435 monitor injection V5 full matched stack
 
 permissions:
   contents: read
 
 on:
   push:
-    branches: [garnet-monitor-injection-v4]
+    branches: [garnet-monitor-injection-v5]
     paths:
       - ".github/workflows/garnet-sm7435.yml"
       - ".github/scripts/patch_qcacld_monitor_injection.py"
@@ -36,7 +36,7 @@ env:
 
 jobs:
   build:
-    name: Matched stack + qcacld raw monitor TX + manual queue arm
+    name: Full matched Image + all modules + qcacld manual queue arm
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -301,36 +301,50 @@ jobs:
             | grep -E 'hdd_mon_hard_start_xmit|ol_txrx_get_mon_vdev_from_pdev|cdp_tx_non_std' \
             || true
 
-      - name: Package injection test artifacts
+      - name: Package complete matched-stack artifacts
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/monitor-injection-v4/modules
-          cp kernel/out/common/arch/arm64/boot/Image artifacts/monitor-injection-v4/Image
-          cp kernel/out/common/.config artifacts/monitor-injection-v4/kernel.config
-          cp kernel/out/common/Module.symvers artifacts/monitor-injection-v4/Module.symvers
+          mkdir -p artifacts/monitor-injection-v5/modules
+          cp kernel/out/common/arch/arm64/boot/Image artifacts/monitor-injection-v5/Image
+          cp kernel/out/common/.config artifacts/monitor-injection-v5/kernel.config
+          cp kernel/out/common/Module.symvers artifacts/monitor-injection-v5/Module.symvers
 
           qca="$(find "module-stage/lib/modules/$EXPECTED_RELEASE" -type f -name 'qca_cld3_adrastea.ko' -print -quit)"
-          cp "$qca" artifacts/monitor-injection-v4/modules/qca_cld3_adrastea.ko
-          cp .github/scripts/patch_qcacld_monitor_injection.py artifacts/monitor-injection-v4/
+          cp "$qca" artifacts/monitor-injection-v5/modules/qca_cld3_adrastea.ko
 
-          git -C kernel/common rev-parse HEAD > artifacts/monitor-injection-v4/kernel.commit
-          git -C kernel/sm7435-modules rev-parse HEAD > artifacts/monitor-injection-v4/modules.commit
-          git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/monitor-injection-v4/kernelsu-next.commit
-          printf '%s\n' "$KERNELSU_VERSION" > artifacts/monitor-injection-v4/kernelsu-next.version
+          # Preserve the complete modules_install tree from this exact Image build.
+          # Packaging later selects the stock vendor_boot/vendor_dlkm filenames
+          # from here, so no module from an older build is reused.
+          rsync -a "module-stage/lib/modules/$EXPECTED_RELEASE/" \
+            artifacts/monitor-injection-v5/modules-tree/
+          module_count="$(find artifacts/monitor-injection-v5/modules-tree \
+            -type f -name '*.ko' | wc -l)"
+          echo "Complete staged module count: $module_count"
+          test "$module_count" -ge 600
+
+          find artifacts/monitor-injection-v5/modules-tree \
+            -type f -name '*.ko' -print0 | sort -z | xargs -0 sha256sum \
+            > artifacts/monitor-injection-v5/MODULES_SHA256SUMS
+          cp .github/scripts/patch_qcacld_monitor_injection.py artifacts/monitor-injection-v5/
+
+          git -C kernel/common rev-parse HEAD > artifacts/monitor-injection-v5/kernel.commit
+          git -C kernel/sm7435-modules rev-parse HEAD > artifacts/monitor-injection-v5/modules.commit
+          git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/monitor-injection-v5/kernelsu-next.commit
+          printf '%s\n' "$KERNELSU_VERSION" > artifacts/monitor-injection-v5/kernelsu-next.version
           printf '%s\n' \
             'boot-safe V1 behavior -> write monitor_tx_enable=1 after boot -> START_ALL_NETIF_QUEUE without carrier -> ndo_start_xmit -> strip radiotap -> monitor vdev -> cdp_tx_non_std RAW|NO_AGGR|NO_ENCRYPT' \
-            > artifacts/monitor-injection-v4/README.txt
+            > artifacts/monitor-injection-v5/README.txt
 
           sha256sum \
-            artifacts/monitor-injection-v4/Image \
-            artifacts/monitor-injection-v4/modules/qca_cld3_adrastea.ko \
-            > artifacts/monitor-injection-v4/SHA256SUMS
+            artifacts/monitor-injection-v5/Image \
+            artifacts/monitor-injection-v5/modules/qca_cld3_adrastea.ko \
+            > artifacts/monitor-injection-v5/SHA256SUMS
 
-      - name: Upload monitor injection V4
+      - name: Upload V5 full matched stack
         uses: actions/upload-artifact@v6
         with:
-          name: garnet-monitor-injection-v4-${{ github.run_number }}
-          path: artifacts/monitor-injection-v4
+          name: garnet-monitor-injection-v5-${{ github.run_number }}
+          path: artifacts/monitor-injection-v5
           if-no-files-found: error
           compression-level: 9
