@@ -321,7 +321,12 @@ jobs:
           module_count="$(find artifacts/monitor-injection-v5/modules-tree \
             -type f -name '*.ko' | wc -l)"
           echo "Complete staged module count: $module_count"
-          test "$module_count" -ge 600
+          # The 303 vendor_boot and 358 vendor_dlkm placements contain
+          # duplicates; modules_install contains the unique compiled modules.
+          test "$module_count" -ge 350
+          find artifacts/monitor-injection-v5/modules-tree \
+            -type f -name '*.ko' -printf '%f\n' | sort -u \
+            > artifacts/monitor-injection-v5/MODULE_BASENAMES.txt
 
           find artifacts/monitor-injection-v5/modules-tree \
             -type f -name '*.ko' -print0 | sort -z | xargs -0 sha256sum \
