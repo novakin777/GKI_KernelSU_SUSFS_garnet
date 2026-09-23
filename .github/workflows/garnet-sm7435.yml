@@ -1,11 +1,11 @@
-name: Garnet SM7435 monitor injection V6 full matched stack + KernelSU Next v3.4.0
+name: Garnet SM7435 monitor injection V7 chunked full matched stack + KernelSU Next v3.4.0
 
 permissions:
   contents: read
 
 on:
   push:
-    branches: [garnet-monitor-injection-v6]
+    branches: [garnet-monitor-injection-v7]
     paths:
       - ".github/workflows/garnet-sm7435.yml"
       - ".github/scripts/patch_qcacld_monitor_injection.py"
@@ -305,51 +305,111 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/monitor-injection-v6/modules
-          cp kernel/out/common/arch/arm64/boot/Image artifacts/monitor-injection-v6/Image
-          cp kernel/out/common/.config artifacts/monitor-injection-v6/kernel.config
-          cp kernel/out/common/Module.symvers artifacts/monitor-injection-v6/Module.symvers
+          mkdir -p artifacts/monitor-injection-v7/modules
+          cp kernel/out/common/arch/arm64/boot/Image artifacts/monitor-injection-v7/Image
+          cp kernel/out/common/.config artifacts/monitor-injection-v7/kernel.config
+          cp kernel/out/common/Module.symvers artifacts/monitor-injection-v7/Module.symvers
 
           qca="$(find "module-stage/lib/modules/$EXPECTED_RELEASE" -type f -name 'qca_cld3_adrastea.ko' -print -quit)"
-          cp "$qca" artifacts/monitor-injection-v6/modules/qca_cld3_adrastea.ko
+          cp "$qca" artifacts/monitor-injection-v7/modules/qca_cld3_adrastea.ko
 
           # Preserve the complete modules_install tree from this exact Image build.
           # Packaging later selects the stock vendor_boot/vendor_dlkm filenames
           # from here, so no module from an older build is reused.
           rsync -a "module-stage/lib/modules/$EXPECTED_RELEASE/" \
-            artifacts/monitor-injection-v6/modules-tree/
-          module_count="$(find artifacts/monitor-injection-v6/modules-tree \
+            artifacts/monitor-injection-v7/modules-tree/
+          module_count="$(find artifacts/monitor-injection-v7/modules-tree \
             -type f -name '*.ko' | wc -l)"
           echo "Complete staged module count: $module_count"
           # The 303 vendor_boot and 358 vendor_dlkm placements contain
           # duplicates; modules_install contains the unique compiled modules.
           test "$module_count" -ge 350
-          find artifacts/monitor-injection-v6/modules-tree \
+          find artifacts/monitor-injection-v7/modules-tree \
             -type f -name '*.ko' -printf '%f\n' | sort -u \
-            > artifacts/monitor-injection-v6/MODULE_BASENAMES.txt
+            > artifacts/monitor-injection-v7/MODULE_BASENAMES.txt
 
-          find artifacts/monitor-injection-v6/modules-tree \
+          find artifacts/monitor-injection-v7/modules-tree \
             -type f -name '*.ko' -print0 | sort -z | xargs -0 sha256sum \
-            > artifacts/monitor-injection-v6/MODULES_SHA256SUMS
-          cp .github/scripts/patch_qcacld_monitor_injection.py artifacts/monitor-injection-v6/
+            > artifacts/monitor-injection-v7/MODULES_SHA256SUMS
+          cp .github/scripts/patch_qcacld_monitor_injection.py artifacts/monitor-injection-v7/
 
-          git -C kernel/common rev-parse HEAD > artifacts/monitor-injection-v6/kernel.commit
-          git -C kernel/sm7435-modules rev-parse HEAD > artifacts/monitor-injection-v6/modules.commit
-          git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/monitor-injection-v6/kernelsu-next.commit
-          printf '%s\n' "$KERNELSU_VERSION" > artifacts/monitor-injection-v6/kernelsu-next.version
+          git -C kernel/common rev-parse HEAD > artifacts/monitor-injection-v7/kernel.commit
+          git -C kernel/sm7435-modules rev-parse HEAD > artifacts/monitor-injection-v7/modules.commit
+          git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/monitor-injection-v7/kernelsu-next.commit
+          printf '%s\n' "$KERNELSU_VERSION" > artifacts/monitor-injection-v7/kernelsu-next.version
           printf '%s\n' \
             'boot-safe V1 behavior -> write monitor_tx_enable=1 after boot -> START_ALL_NETIF_QUEUE without carrier -> ndo_start_xmit -> strip radiotap -> monitor vdev -> cdp_tx_non_std RAW|NO_AGGR|NO_ENCRYPT' \
-            > artifacts/monitor-injection-v6/README.txt
+            > artifacts/monitor-injection-v7/README.txt
 
           sha256sum \
-            artifacts/monitor-injection-v6/Image \
-            artifacts/monitor-injection-v6/modules/qca_cld3_adrastea.ko \
-            > artifacts/monitor-injection-v6/SHA256SUMS
+            artifacts/monitor-injection-v7/Image \
+            artifacts/monitor-injection-v7/modules/qca_cld3_adrastea.ko \
+            > artifacts/monitor-injection-v7/SHA256SUMS
 
-      - name: Upload V6 full matched stack
+      - name: Split complete module tree for download
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="artifacts/monitor-injection-v7"
+          mkdir -p "$root/chunks"
+          tar --zstd -cf "$root/modules-tree.tar.zst" -C "$root" modules-tree
+          split -b 350M -d -a 2 "$root/modules-tree.tar.zst" \
+            "$root/chunks/modules-tree.tar.zst.part-"
+          rm -rf "$root/modules-tree" "$root/modules-tree.tar.zst"
+          ls -lh "$root/chunks"
+
+      - name: Upload V7 metadata
         uses: actions/upload-artifact@v6
         with:
-          name: garnet-monitor-injection-v6-${{ github.run_number }}
-          path: artifacts/monitor-injection-v6
+          name: garnet-monitor-injection-v7-metadata-${{ github.run_number }}
+          path: artifacts/monitor-injection-v7
           if-no-files-found: error
           compression-level: 9
+
+      - name: Upload V7 module chunk 00
+        uses: actions/upload-artifact@v6
+        with:
+          name: garnet-monitor-injection-v7-modules-00-${{ github.run_number }}
+          path: artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-00
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload V7 module chunk 01
+        if: ${{ hashFiles('artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-01') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: garnet-monitor-injection-v7-modules-01-${{ github.run_number }}
+          path: artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-01
+          compression-level: 0
+
+      - name: Upload V7 module chunk 02
+        if: ${{ hashFiles('artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-02') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: garnet-monitor-injection-v7-modules-02-${{ github.run_number }}
+          path: artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-02
+          compression-level: 0
+
+      - name: Upload V7 module chunk 03
+        if: ${{ hashFiles('artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-03') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: garnet-monitor-injection-v7-modules-03-${{ github.run_number }}
+          path: artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-03
+          compression-level: 0
+
+      - name: Upload V7 module chunk 04
+        if: ${{ hashFiles('artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-04') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: garnet-monitor-injection-v7-modules-04-${{ github.run_number }}
+          path: artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-04
+          compression-level: 0
+
+      - name: Upload V7 module chunk 05
+        if: ${{ hashFiles('artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-05') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: garnet-monitor-injection-v7-modules-05-${{ github.run_number}}
+          path: artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-05
+          compression-level: 0
