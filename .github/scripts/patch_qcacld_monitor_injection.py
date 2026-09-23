@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# V4: keep monitor TX queues stopped at boot; expose an explicit runtime switch.
+# V8: keep monitor TX queues stopped at boot; expose an unconditional runtime switch.
 from pathlib import Path
 import sys
 
@@ -57,7 +57,8 @@ replace_once(
 replace_once(
     module,
     "static int __init hdd_module_init(void)\n",
-    r'''#ifdef FEATURE_MONITOR_MODE_SUPPORT
+    r'''/* Keep this parameter unconditional: this target exposes con_mode=4
+ * even when FEATURE_MONITOR_MODE_SUPPORT is not defined for every HDD unit. */
 static bool monitor_tx_enable;
 
 static int monitor_tx_enable_set(const char *val,
@@ -105,7 +106,6 @@ module_param_cb(monitor_tx_enable, &monitor_tx_enable_ops,
                 &monitor_tx_enable, 0644);
 MODULE_PARM_DESC(monitor_tx_enable,
                  "Manually enable raw monitor TX queues after Android boot");
-#endif
 
 static int __init hdd_module_init(void)
 ''',
@@ -207,4 +207,4 @@ drop:
 '''
 replace_once(txrx, marker, function + marker)
 
-print("qcacld monitor raw-injection V4 manual-arm patch applied successfully")
+print("qcacld monitor raw-injection V8 manual-arm patch applied successfully")
