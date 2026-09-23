@@ -293,9 +293,11 @@ jobs:
           readelf -h "$module" | grep -F 'AArch64'
           modinfo "$module" \
             | grep -F "vermagic:       $EXPECTED_RELEASE SMP preempt mod_unload modversions aarch64"
-          # This must be an exported module parameter, not merely source code
-          # hidden behind FEATURE_MONITOR_MODE_SUPPORT in another HDD unit.
-          modinfo "$module" | grep -E '^parmtype:[[:space:]]*monitor_tx_enable:bool
+
+          # Fail the build unless the runtime queue-arm control is exported.
+          modinfo "$module" \
+            | grep -E '^parmtype:[[:space:]]*monitor_tx_enable:bool
+          # Full LTO and INSTALL_MOD_STRIP may inline, internalize, or remove
           # local names. Source-level grep in the patch step is authoritative.
           echo "ELF symbol diagnostics (absence is expected and is not a failure):"
           readelf -Ws "$module" \
@@ -415,7 +417,8 @@ jobs:
           path: artifacts/monitor-injection-v7/chunks/modules-tree.tar.zst.part-05
           compression-level: 0
 
-          readelf -p .modinfo "$module" | grep -F 'parmtype=monitor_tx_enable:bool'
+          readelf -p .modinfo "$module" \
+            | grep -F 'parmtype=monitor_tx_enable:bool'
 
           # Full LTO and INSTALL_MOD_STRIP may inline, internalize, or remove
           # local names. Source-level grep in the patch step is authoritative.
