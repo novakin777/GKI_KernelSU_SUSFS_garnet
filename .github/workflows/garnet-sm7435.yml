@@ -293,9 +293,15 @@ jobs:
           modinfo "$module" \
             | grep -F "vermagic:       $EXPECTED_RELEASE SMP preempt mod_unload modversions aarch64"
 
-          # Fail the build unless the runtime queue-arm control is exported.
-          modinfo "$module" | grep -F "monitor_tx_enable:bool"
-          readelf -p .modinfo "$module" | grep -F "parmtype=monitor_tx_enable:bool"
+          # module_param_cb() has custom ops, so Linux emits parm= but no
+          # parmtype=...:bool record. Verify the exported description and the
+          # callback's unique runtime log string in the finished module.
+          modinfo "$module" \
+            | grep -F "monitor_tx_enable:Manually enable raw monitor TX queues after Android boot"
+          readelf -p .modinfo "$module" \
+            | grep -F "parm=monitor_tx_enable:Manually enable raw monitor TX queues after Android boot"
+          strings "$module" \
+            | grep -F "Manually enabling monitor Tx queues without carrier"
           # Full LTO and INSTALL_MOD_STRIP may inline, internalize, or remove
           # local names. Source-level grep in the patch step is authoritative.
           echo "ELF symbol diagnostics (absence is expected and is not a failure):"
