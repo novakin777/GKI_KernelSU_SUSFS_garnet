@@ -1,4 +1,4 @@
-name: Garnet SM7435 monitor injection V8 chunked full matched stack + KernelSU Next v3.4.0
+name: Garnet SM7435 monitor injection V8.1 chunked full matched stack + KernelSU Next v3.4.0
 
 permissions:
   contents: read
@@ -97,10 +97,10 @@ jobs:
 
           hdd=kernel/sm7435-modules/qcom/opensource/wlan/qcacld-3.0/core/hdd
           grep -n "ndo_start_xmit = hdd_mon_hard_start_xmit" "$hdd/src/wlan_hdd_main.c"
-          grep -n "module_param_cb(monitor_tx_enable" "$hdd/src/wlan_hdd_main_module.c"
-          grep -n "Manually enabling monitor Tx queues without carrier" "$hdd/src/wlan_hdd_main_module.c"
-          grep -n "WLAN_START_ALL_NETIF_QUEUE" "$hdd/src/wlan_hdd_main_module.c"
-          grep -n "WLAN_STOP_ALL_NETIF_QUEUE" "$hdd/src/wlan_hdd_main_module.c"
+          grep -n "module_param_cb(monitor_tx_enable" "$hdd/src/wlan_hdd_main.c"
+          grep -n "Manually enabling monitor Tx queues without carrier" "$hdd/src/wlan_hdd_main.c"
+          grep -n "WLAN_START_ALL_NETIF_QUEUE" "$hdd/src/wlan_hdd_main.c"
+          grep -n "WLAN_STOP_ALL_NETIF_QUEUE" "$hdd/src/wlan_hdd_main.c"
           ! grep -q "Enabling monitor Tx queues without carrier" "$hdd/src/wlan_hdd_main.c"
           grep -n "hdd_mon_hard_start_xmit" "$hdd/src/wlan_hdd_tx_rx.c" "$hdd/inc/wlan_hdd_tx_rx.h"
           grep -n "OL_TX_SPEC_RAW.*OL_TX_SPEC_NO_AGGR.*OL_TX_SPEC_NO_ENCRYPT" "$hdd/src/wlan_hdd_tx_rx.c"
@@ -108,7 +108,6 @@ jobs:
           git -C kernel/sm7435-modules diff -- \
             qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_tx_rx.h \
             qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c \
-            qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main_module.c \
             qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
 
       - name: Integrate pinned KernelSU Next
