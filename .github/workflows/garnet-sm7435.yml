@@ -295,8 +295,8 @@ jobs:
             | grep -F "vermagic:       $EXPECTED_RELEASE SMP preempt mod_unload modversions aarch64"
 
           # Fail the build unless the runtime queue-arm control is exported.
-          modinfo "$module" \
-            | grep -E '^parmtype:[[:space:]]*monitor_tx_enable:bool
+          modinfo "$module" | grep -F "monitor_tx_enable:bool"
+          readelf -p .modinfo "$module" | grep -F "parmtype=monitor_tx_enable:bool"
           # Full LTO and INSTALL_MOD_STRIP may inline, internalize, or remove
           # local names. Source-level grep in the patch step is authoritative.
           echo "ELF symbol diagnostics (absence is expected and is not a failure):"
