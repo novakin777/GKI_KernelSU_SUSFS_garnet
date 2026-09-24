@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# V8: keep monitor TX queues stopped at boot; expose an unconditional runtime switch.
+# V8.1: keep monitor TX queues stopped at boot; place the runtime switch in the always-linked HDD object.
 from pathlib import Path
 import sys
 
@@ -31,6 +31,12 @@ replace_once(
 main = HDD / "src/wlan_hdd_main.c"
 replace_once(
     main,
+    "#include <linux/kernel.h>\n",
+    "#include <linux/kernel.h>\n"
+    "#include <linux/moduleparam.h>\n",
+)
+replace_once(
+    main,
     "/* Monitor mode net_device_ops, doesnot Tx and most of operations. */\n"
     "static const struct net_device_ops wlan_mon_drv_ops = {\n"
     "\t.ndo_open = hdd_mon_open,\n"
@@ -46,19 +52,11 @@ replace_once(
     "};",
 )
 
-module = HDD / "src/wlan_hdd_main_module.c"
 replace_once(
-    module,
-    "#include \"wlan_hdd_main.h\"\n",
-    "#include \"wlan_hdd_main.h\"\n"
-    "#include \"wlan_hdd_tx_rx.h\"\n",
-)
-
-replace_once(
-    module,
-    "static int __init hdd_module_init(void)\n",
-    r'''/* Keep this parameter unconditional: this target exposes con_mode=4
- * even when FEATURE_MONITOR_MODE_SUPPORT is not defined for every HDD unit. */
+    main,
+    "/* Monitor mode net_device_ops with raw 802.11 TX support. */\n",
+    r'''/* Runtime queue arm lives in wlan_hdd_main.c because this object is
+ * always linked into qca_cld3_adrastea for the non-resident profile. */
 static bool monitor_tx_enable;
 
 static int monitor_tx_enable_set(const char *val,
@@ -83,14 +81,14 @@ static int monitor_tx_enable_set(const char *val,
 
     if (enable) {
         hdd_info("Manually enabling monitor Tx queues without carrier");
-        wlan_hdd_netif_queue_control(
-            adapter, WLAN_START_ALL_NETIF_QUEUE,
-            WLAN_CONTROL_PATH);
+        wlan_hdd_netif_queue_control(adapter,
+                                     WLAN_START_ALL_NETIF_QUEUE,
+                                     WLAN_CONTROL_PATH);
     } else {
         hdd_info("Manually disabling monitor Tx queues");
-        wlan_hdd_netif_queue_control(
-            adapter, WLAN_STOP_ALL_NETIF_QUEUE,
-            WLAN_CONTROL_PATH);
+        wlan_hdd_netif_queue_control(adapter,
+                                     WLAN_STOP_ALL_NETIF_QUEUE,
+                                     WLAN_CONTROL_PATH);
     }
 
     WRITE_ONCE(monitor_tx_enable, enable);
@@ -107,7 +105,7 @@ module_param_cb(monitor_tx_enable, &monitor_tx_enable_ops,
 MODULE_PARM_DESC(monitor_tx_enable,
                  "Manually enable raw monitor TX queues after Android boot");
 
-static int __init hdd_module_init(void)
+/* Monitor mode net_device_ops with raw 802.11 TX support. */
 ''',
 )
 
@@ -207,4 +205,4 @@ drop:
 '''
 replace_once(txrx, marker, function + marker)
 
-print("qcacld monitor raw-injection V8 manual-arm patch applied successfully")
+print("qcacld monitor raw-injection V8.1 always-linked manual-arm patch applied successfully")
