@@ -1,4 +1,4 @@
-name: Garnet SM7435 monitor injection V8.1 chunked full matched stack + KernelSU Next v3.4.0
+name: Garnet SM7435 monitor injection V8.2 September firmware full matched stack + KernelSU Next v3.4.0
 
 permissions:
   contents: read
@@ -33,6 +33,7 @@ env:
   CLANG_DIRECTORY: clang-r563880c
   KERNEL_LOCALVERSION: -gki-g7ee66f07cebf
   EXPECTED_RELEASE: 5.10.260-gki-g7ee66f07cebf
+  BASE_FIRMWARE_PATCH: 2026-09
 
 jobs:
   build:
@@ -346,7 +347,7 @@ jobs:
           git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/monitor-injection-v8/kernelsu-next.commit
           printf '%s\n' "$KERNELSU_VERSION" > artifacts/monitor-injection-v8/kernelsu-next.version
           printf '%s\n' \
-            'boot-safe V1 behavior -> write monitor_tx_enable=1 after boot -> START_ALL_NETIF_QUEUE without carrier -> ndo_start_xmit -> strip radiotap -> monitor vdev -> cdp_tx_non_std RAW|NO_AGGR|NO_ENCRYPT' \
+            'September 2026 firmware base; boot-safe V1 behavior -> write monitor_tx_enable=1 after boot -> START_ALL_NETIF_QUEUE without carrier -> ndo_start_xmit -> strip radiotap -> monitor vdev -> cdp_tx_non_std RAW|NO_AGGR|NO_ENCRYPT' \
             > artifacts/monitor-injection-v8/README.txt
 
           sha256sum \
