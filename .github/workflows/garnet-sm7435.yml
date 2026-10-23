@@ -1,4 +1,4 @@
-name: Garnet SM7435 clean optimized full matched stack + KernelSU Next v3.4.2
+name: Garnet SM7435 balanced optimized full matched stack + KernelSU Next v3.4.2
 
 permissions:
   contents: read
@@ -36,7 +36,7 @@ env:
 
 jobs:
   build:
-    name: Clean optimized Image + all matched modules + KSU v3.4.2
+    name: Balanced optimized Image + all matched modules + KSU v3.4.2
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -166,6 +166,8 @@ jobs:
             CONFIG_ATH9K_HTC=m CONFIG_MODVERSIONS=y CONFIG_CFI_CLANG=y
             CONFIG_LTO_CLANG_FULL=y CONFIG_CFI_CLANG=y
             CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y CONFIG_KPROBES=y CONFIG_KSU=y
+            CONFIG_PM=y CONFIG_PM_SLEEP=y CONFIG_CPU_IDLE=y CONFIG_ARM_CPUIDLE=y
+            CONFIG_CPU_FREQ=y CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y CONFIG_ENERGY_MODEL=y
           )
           for symbol in "${required[@]}"; do
             grep -Fqx "$symbol" "$out/.config" || {
@@ -292,7 +294,7 @@ jobs:
           git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/clean-optimized-v9/kernelsu-next.commit
           printf '%s\n' "$KERNELSU_VERSION" > artifacts/clean-optimized-v9/kernelsu-next.version
           printf '%s\n' \
-            'September 2026 firmware base; clean upstream qcacld without monitor TX/injection patches; safe performance profile with -O2, Full LTO and CFI; complete matched Image and module stack; KernelSU Next v3.4.2' \
+            'September 2026 firmware base; clean upstream qcacld without monitor TX/injection patches; balanced performance/battery profile with -O2, Full LTO, CFI, schedutil, Energy Model and CPU idle; complete matched Image and module stack; KernelSU Next v3.4.2' \
             > artifacts/clean-optimized-v9/README.txt
 
           sha256sum \
