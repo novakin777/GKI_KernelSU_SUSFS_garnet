@@ -311,7 +311,7 @@ jobs:
           rm -rf "$root/modules-tree" "$root/modules-tree.tar.zst"
           ls -lh "$root/chunks"
 
-      - name: Upload V8 metadata
+      - name: Upload clean optimized metadata
         uses: actions/upload-artifact@v6
         with:
           name: garnet-clean-optimized-v9-metadata-${{ github.run_number }}
@@ -319,7 +319,7 @@ jobs:
           if-no-files-found: error
           compression-level: 9
 
-      - name: Upload V8 module chunk 00
+      - name: Upload clean optimized module chunk 00
         uses: actions/upload-artifact@v6
         with:
           name: garnet-clean-optimized-v9-modules-00-${{ github.run_number }}
@@ -327,7 +327,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-      - name: Upload V8 module chunk 01
+      - name: Upload clean optimized module chunk 01
         if: ${{ hashFiles('artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-01') != '' }}
         uses: actions/upload-artifact@v6
         with:
@@ -335,7 +335,7 @@ jobs:
           path: artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-01
           compression-level: 0
 
-      - name: Upload V8 module chunk 02
+      - name: Upload clean optimized module chunk 02
         if: ${{ hashFiles('artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-02') != '' }}
         uses: actions/upload-artifact@v6
         with:
@@ -343,7 +343,7 @@ jobs:
           path: artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-02
           compression-level: 0
 
-      - name: Upload V8 module chunk 03
+      - name: Upload clean optimized module chunk 03
         if: ${{ hashFiles('artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-03') != '' }}
         uses: actions/upload-artifact@v6
         with:
@@ -351,7 +351,7 @@ jobs:
           path: artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-03
           compression-level: 0
 
-      - name: Upload V8 module chunk 04
+      - name: Upload clean optimized module chunk 04
         if: ${{ hashFiles('artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-04') != '' }}
         uses: actions/upload-artifact@v6
         with:
@@ -359,7 +359,7 @@ jobs:
           path: artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-04
           compression-level: 0
 
-      - name: Upload V8 module chunk 05
+      - name: Upload clean optimized module chunk 05
         if: ${{ hashFiles('artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-05') != '' }}
         uses: actions/upload-artifact@v6
         with:
