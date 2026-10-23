@@ -1,4 +1,4 @@
-name: Garnet SM7435 clean optimized full matched stack + KernelSU Next v3.4.0
+name: Garnet SM7435 clean optimized full matched stack + KernelSU Next v3.4.2
 
 permissions:
   contents: read
@@ -25,8 +25,8 @@ env:
   MODULES_COMMIT: 0247408280f62b7feb62c30cbdc76a5e62eebd84
   DROIDSPACES_COMMIT: 9c6a1c056e6cdb096c8cfd037e3221fcdf39bf7d
   KERNELSU_REPOSITORY: https://github.com/KernelSU-Next/KernelSU-Next.git
-  KERNELSU_COMMIT: 1a879d6a866f80b1fa1c1009a2ffa747873cbb5e
-  KERNELSU_VERSION: v3.4.0
+  KERNELSU_COMMIT: 4c706b5938665866ebe16944a481a7b91e3396af
+  KERNELSU_VERSION: v3.4.2
   CLANG_REPOSITORY: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
   CLANG_COMMIT: f8439f0628d799092dd07df440a6334cab28939c
   CLANG_DIRECTORY: clang-r563880c
@@ -36,7 +36,7 @@ env:
 
 jobs:
   build:
-    name: Clean optimized Image + all matched modules + KSU v3.4.0
+    name: Clean optimized Image + all matched modules + KSU v3.4.2
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -291,7 +291,7 @@ jobs:
           git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/clean-optimized-v9/kernelsu-next.commit
           printf '%s\n' "$KERNELSU_VERSION" > artifacts/clean-optimized-v9/kernelsu-next.version
           printf '%s\n' \
-            'September 2026 firmware base; clean upstream qcacld without monitor TX/injection patches; safe performance profile with -O2, Full LTO and CFI; complete matched Image and module stack; KernelSU Next v3.4.0' \
+            'September 2026 firmware base; clean upstream qcacld without monitor TX/injection patches; safe performance profile with -O2, Full LTO and CFI; complete matched Image and module stack; KernelSU Next v3.4.2' \
             > artifacts/clean-optimized-v9/README.txt
 
           sha256sum \
