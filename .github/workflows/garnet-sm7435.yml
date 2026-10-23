@@ -5,7 +5,7 @@ permissions:
 
 on:
   push:
-    branches: [garnet-clean-optimized-v9]
+    branches: [garnet-monitor-injection-v8]
     paths:
       - ".github/workflows/garnet-sm7435.yml"
       - ".github/config/garnet-nethunter.config"
@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: Checkout injection branch
+      - name: Checkout build branch
         uses: actions/checkout@v7
 
       - name: Free disk space
@@ -164,7 +164,8 @@ jobs:
             CONFIG_CFG80211=m CONFIG_MAC80211=m
             CONFIG_ATH_COMMON=m CONFIG_ATH9K_HW=m CONFIG_ATH9K_COMMON=m
             CONFIG_ATH9K_HTC=m CONFIG_MODVERSIONS=y CONFIG_CFI_CLANG=y
-            CONFIG_LTO_CLANG_FULL=y CONFIG_CFI_CLANG=y\n            CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y CONFIG_KPROBES=y CONFIG_KSU=y
+            CONFIG_LTO_CLANG_FULL=y CONFIG_CFI_CLANG=y
+            CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y CONFIG_KPROBES=y CONFIG_KSU=y
           )
           for symbol in "${required[@]}"; do
             grep -Fqx "$symbol" "$out/.config" || {
