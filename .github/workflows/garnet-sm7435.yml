@@ -1,14 +1,13 @@
-name: Garnet SM7435 monitor injection V8.2 September firmware full matched stack + KernelSU Next v3.4.2
+name: Garnet SM7435 clean optimized full matched stack + KernelSU Next v3.4.0
 
 permissions:
   contents: read
 
 on:
   push:
-    branches: [garnet-monitor-injection-v8]
+    branches: [garnet-clean-optimized-v9]
     paths:
       - ".github/workflows/garnet-sm7435.yml"
-      - ".github/scripts/patch_qcacld_monitor_injection.py"
       - ".github/config/garnet-nethunter.config"
       - ".github/config/garnet-pixelos-stock.config.gz"
       - ".github/actions/droidspaces/**"
@@ -26,8 +25,8 @@ env:
   MODULES_COMMIT: 0247408280f62b7feb62c30cbdc76a5e62eebd84
   DROIDSPACES_COMMIT: 9c6a1c056e6cdb096c8cfd037e3221fcdf39bf7d
   KERNELSU_REPOSITORY: https://github.com/KernelSU-Next/KernelSU-Next.git
-  KERNELSU_COMMIT: 4c706b5938665866ebe16944a481a7b91e3396af
-  KERNELSU_VERSION: v3.4.2
+  KERNELSU_COMMIT: 1a879d6a866f80b1fa1c1009a2ffa747873cbb5e
+  KERNELSU_VERSION: v3.4.0
   CLANG_REPOSITORY: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
   CLANG_COMMIT: f8439f0628d799092dd07df440a6334cab28939c
   CLANG_DIRECTORY: clang-r563880c
@@ -37,7 +36,7 @@ env:
 
 jobs:
   build:
-    name: Full matched Image + all modules + qcacld manual queue arm + KSU v3.4.2
+    name: Clean optimized Image + all matched modules + KSU v3.4.0
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -89,27 +88,6 @@ jobs:
           git -C kernel/sm7435-modules fetch --depth=1 origin "$MODULES_COMMIT"
           git -C kernel/sm7435-modules checkout --detach "$MODULES_COMMIT"
           test "$(git -C kernel/sm7435-modules rev-parse HEAD)" = "$MODULES_COMMIT"
-
-      - name: Patch Adrastea monitor TX path
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/patch_qcacld_monitor_injection.py kernel/sm7435-modules
-
-          hdd=kernel/sm7435-modules/qcom/opensource/wlan/qcacld-3.0/core/hdd
-          grep -n "ndo_start_xmit = hdd_mon_hard_start_xmit" "$hdd/src/wlan_hdd_main.c"
-          grep -n "module_param_cb(monitor_tx_enable" "$hdd/src/wlan_hdd_main.c"
-          grep -n "Manually enabling monitor Tx queues without carrier" "$hdd/src/wlan_hdd_main.c"
-          grep -n "WLAN_START_ALL_NETIF_QUEUE" "$hdd/src/wlan_hdd_main.c"
-          grep -n "WLAN_STOP_ALL_NETIF_QUEUE" "$hdd/src/wlan_hdd_main.c"
-          ! grep -q "Enabling monitor Tx queues without carrier" "$hdd/src/wlan_hdd_main.c"
-          grep -n "hdd_mon_hard_start_xmit" "$hdd/src/wlan_hdd_tx_rx.c" "$hdd/inc/wlan_hdd_tx_rx.h"
-          grep -n "OL_TX_SPEC_RAW.*OL_TX_SPEC_NO_AGGR.*OL_TX_SPEC_NO_ENCRYPT" "$hdd/src/wlan_hdd_tx_rx.c"
-          git -C kernel/sm7435-modules diff --check
-          git -C kernel/sm7435-modules diff -- \
-            qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_tx_rx.h \
-            qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c \
-            qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
 
       - name: Integrate pinned KernelSU Next
         shell: bash
@@ -186,7 +164,7 @@ jobs:
             CONFIG_CFG80211=m CONFIG_MAC80211=m
             CONFIG_ATH_COMMON=m CONFIG_ATH9K_HW=m CONFIG_ATH9K_COMMON=m
             CONFIG_ATH9K_HTC=m CONFIG_MODVERSIONS=y CONFIG_CFI_CLANG=y
-            CONFIG_LTO_CLANG_FULL=y CONFIG_KPROBES=y CONFIG_KSU=y
+            CONFIG_LTO_CLANG_FULL=y CONFIG_CFI_CLANG=y\n            CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y CONFIG_KPROBES=y CONFIG_KSU=y
           )
           for symbol in "${required[@]}"; do
             grep -Fqx "$symbol" "$out/.config" || {
@@ -276,90 +254,56 @@ jobs:
             echo "::endgroup::"
           done
 
-      - name: Verify monitor TX is present in qca_cld3_adrastea
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # modules_install already proved where Kbuild placed the finished
-          # module. Validate that deterministic staged copy instead of guessing
-          # the location of Kbuild's O= output for the .adrastea symlink tree.
-          module="$(find "module-stage/lib/modules/$EXPECTED_RELEASE" \
-            -type f -name 'qca_cld3_adrastea.ko' -print -quit)"
-          test -n "$module"
-          test -s "$module"
-          echo "Staged module: $module"
-
-          readelf -h "$module" | grep -F 'AArch64'
-          modinfo "$module" \
-            | grep -F "vermagic:       $EXPECTED_RELEASE SMP preempt mod_unload modversions aarch64"
-
-          # module_param_cb() has custom ops, so Linux emits parm= but no
-          # parmtype=...:bool record. Verify the exported description and the
-          # callback's unique runtime log string in the finished module.
-          modinfo "$module" \
-            | grep -F "monitor_tx_enable:Manually enable raw monitor TX queues after Android boot"
-          readelf -p .modinfo "$module" \
-            | grep -F "parm=monitor_tx_enable:Manually enable raw monitor TX queues after Android boot"
-          strings "$module" \
-            | grep -F "Manually enabling monitor Tx queues without carrier"
-          # Full LTO and INSTALL_MOD_STRIP may inline, internalize, or remove
-          # local names. Source-level grep in the patch step is authoritative.
-          echo "ELF symbol diagnostics (absence is expected and is not a failure):"
-          readelf -Ws "$module" \
-            | grep -E 'hdd_mon_hard_start_xmit|ol_txrx_get_mon_vdev_from_pdev|cdp_tx_non_std' \
-            || true
-
       - name: Package complete matched-stack artifacts
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/monitor-injection-v8/modules
-          cp kernel/out/common/arch/arm64/boot/Image artifacts/monitor-injection-v8/Image
-          cp kernel/out/common/.config artifacts/monitor-injection-v8/kernel.config
-          cp kernel/out/common/Module.symvers artifacts/monitor-injection-v8/Module.symvers
+          mkdir -p artifacts/clean-optimized-v9/modules
+          cp kernel/out/common/arch/arm64/boot/Image artifacts/clean-optimized-v9/Image
+          cp kernel/out/common/.config artifacts/clean-optimized-v9/kernel.config
+          cp kernel/out/common/Module.symvers artifacts/clean-optimized-v9/Module.symvers
 
           qca="$(find "module-stage/lib/modules/$EXPECTED_RELEASE" -type f -name 'qca_cld3_adrastea.ko' -print -quit)"
-          cp "$qca" artifacts/monitor-injection-v8/modules/qca_cld3_adrastea.ko
+          cp "$qca" artifacts/clean-optimized-v9/modules/qca_cld3_adrastea.ko
 
           # Preserve the complete modules_install tree from this exact Image build.
           # Packaging later selects the stock vendor_boot/vendor_dlkm filenames
           # from here, so no module from an older build is reused.
           rsync -a "module-stage/lib/modules/$EXPECTED_RELEASE/" \
-            artifacts/monitor-injection-v8/modules-tree/
-          module_count="$(find artifacts/monitor-injection-v8/modules-tree \
+            artifacts/clean-optimized-v9/modules-tree/
+          module_count="$(find artifacts/clean-optimized-v9/modules-tree \
             -type f -name '*.ko' | wc -l)"
           echo "Complete staged module count: $module_count"
           # The 303 vendor_boot and 358 vendor_dlkm placements contain
           # duplicates; modules_install contains the unique compiled modules.
           test "$module_count" -ge 350
-          find artifacts/monitor-injection-v8/modules-tree \
+          find artifacts/clean-optimized-v9/modules-tree \
             -type f -name '*.ko' -printf '%f\n' | sort -u \
-            > artifacts/monitor-injection-v8/MODULE_BASENAMES.txt
+            > artifacts/clean-optimized-v9/MODULE_BASENAMES.txt
 
-          find artifacts/monitor-injection-v8/modules-tree \
+          find artifacts/clean-optimized-v9/modules-tree \
             -type f -name '*.ko' -print0 | sort -z | xargs -0 sha256sum \
-            > artifacts/monitor-injection-v8/MODULES_SHA256SUMS
-          cp .github/scripts/patch_qcacld_monitor_injection.py artifacts/monitor-injection-v8/
+            > artifacts/clean-optimized-v9/MODULES_SHA256SUMS
 
-          git -C kernel/common rev-parse HEAD > artifacts/monitor-injection-v8/kernel.commit
-          git -C kernel/sm7435-modules rev-parse HEAD > artifacts/monitor-injection-v8/modules.commit
-          git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/monitor-injection-v8/kernelsu-next.commit
-          printf '%s\n' "$KERNELSU_VERSION" > artifacts/monitor-injection-v8/kernelsu-next.version
+
+          git -C kernel/common rev-parse HEAD > artifacts/clean-optimized-v9/kernel.commit
+          git -C kernel/sm7435-modules rev-parse HEAD > artifacts/clean-optimized-v9/modules.commit
+          git -C kernel/KernelSU-Next rev-parse HEAD > artifacts/clean-optimized-v9/kernelsu-next.commit
+          printf '%s\n' "$KERNELSU_VERSION" > artifacts/clean-optimized-v9/kernelsu-next.version
           printf '%s\n' \
-            'September 2026 firmware base; boot-safe V1 behavior -> write monitor_tx_enable=1 after boot -> START_ALL_NETIF_QUEUE without carrier -> ndo_start_xmit -> strip radiotap -> monitor vdev -> cdp_tx_non_std RAW|NO_AGGR|NO_ENCRYPT' \
-            > artifacts/monitor-injection-v8/README.txt
+            'September 2026 firmware base; clean upstream qcacld without monitor TX/injection patches; safe performance profile with -O2, Full LTO and CFI; complete matched Image and module stack; KernelSU Next v3.4.0' \
+            > artifacts/clean-optimized-v9/README.txt
 
           sha256sum \
-            artifacts/monitor-injection-v8/Image \
-            artifacts/monitor-injection-v8/modules/qca_cld3_adrastea.ko \
-            > artifacts/monitor-injection-v8/SHA256SUMS
+            artifacts/clean-optimized-v9/Image \
+            artifacts/clean-optimized-v9/modules/qca_cld3_adrastea.ko \
+            > artifacts/clean-optimized-v9/SHA256SUMS
 
       - name: Split complete module tree for download
         shell: bash
         run: |
           set -euo pipefail
-          root="artifacts/monitor-injection-v8"
+          root="artifacts/clean-optimized-v9"
           mkdir -p "$root/chunks"
           tar --zstd -cf "$root/modules-tree.tar.zst" -C "$root" modules-tree
           split -b 350M -d -a 2 "$root/modules-tree.tar.zst" \
@@ -370,56 +314,56 @@ jobs:
       - name: Upload V8 metadata
         uses: actions/upload-artifact@v6
         with:
-          name: garnet-monitor-injection-v8-metadata-${{ github.run_number }}
-          path: artifacts/monitor-injection-v8
+          name: garnet-clean-optimized-v9-metadata-${{ github.run_number }}
+          path: artifacts/clean-optimized-v9
           if-no-files-found: error
           compression-level: 9
 
       - name: Upload V8 module chunk 00
         uses: actions/upload-artifact@v6
         with:
-          name: garnet-monitor-injection-v8-modules-00-${{ github.run_number }}
-          path: artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-00
+          name: garnet-clean-optimized-v9-modules-00-${{ github.run_number }}
+          path: artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-00
           if-no-files-found: error
           compression-level: 0
 
       - name: Upload V8 module chunk 01
-        if: ${{ hashFiles('artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-01') != '' }}
+        if: ${{ hashFiles('artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-01') != '' }}
         uses: actions/upload-artifact@v6
         with:
-          name: garnet-monitor-injection-v8-modules-01-${{ github.run_number }}
-          path: artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-01
+          name: garnet-clean-optimized-v9-modules-01-${{ github.run_number }}
+          path: artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-01
           compression-level: 0
 
       - name: Upload V8 module chunk 02
-        if: ${{ hashFiles('artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-02') != '' }}
+        if: ${{ hashFiles('artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-02') != '' }}
         uses: actions/upload-artifact@v6
         with:
-          name: garnet-monitor-injection-v8-modules-02-${{ github.run_number }}
-          path: artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-02
+          name: garnet-clean-optimized-v9-modules-02-${{ github.run_number }}
+          path: artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-02
           compression-level: 0
 
       - name: Upload V8 module chunk 03
-        if: ${{ hashFiles('artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-03') != '' }}
+        if: ${{ hashFiles('artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-03') != '' }}
         uses: actions/upload-artifact@v6
         with:
-          name: garnet-monitor-injection-v8-modules-03-${{ github.run_number }}
-          path: artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-03
+          name: garnet-clean-optimized-v9-modules-03-${{ github.run_number }}
+          path: artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-03
           compression-level: 0
 
       - name: Upload V8 module chunk 04
-        if: ${{ hashFiles('artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-04') != '' }}
+        if: ${{ hashFiles('artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-04') != '' }}
         uses: actions/upload-artifact@v6
         with:
-          name: garnet-monitor-injection-v8-modules-04-${{ github.run_number }}
-          path: artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-04
+          name: garnet-clean-optimized-v9-modules-04-${{ github.run_number }}
+          path: artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-04
           compression-level: 0
 
       - name: Upload V8 module chunk 05
-        if: ${{ hashFiles('artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-05') != '' }}
+        if: ${{ hashFiles('artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-05') != '' }}
         uses: actions/upload-artifact@v6
         with:
-          name: garnet-monitor-injection-v8-modules-05-${{ github.run_number}}
-          path: artifacts/monitor-injection-v8/chunks/modules-tree.tar.zst.part-05
+          name: garnet-clean-optimized-v9-modules-05-${{ github.run_number}}
+          path: artifacts/clean-optimized-v9/chunks/modules-tree.tar.zst.part-05
           compression-level: 0
 
